@@ -53,7 +53,7 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading financial footprints & establishing stable LLM cadence..."):
+    with st.spinner("Downloading financial footprints & establishing stable LLM cadence... (May take 30+ secs depending on book size)"):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -169,7 +169,7 @@ if 'master_df' in st.session_state:
     mdf = st.session_state.master_df
     
     unique_cats = []
-    unique_tickers_list = [] # Tracker used for the Global Trends mapping graph!
+    unique_tickers_list = []
     for row in valid_rows:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
         if row["Ticker"] not in unique_tickers_list: unique_tickers_list.append(row["Ticker"])
@@ -201,25 +201,23 @@ if 'master_df' in st.session_state:
     st.markdown("<div class='cat-heading'>🌍 Search Intensity Metrics (Comparative Max Volume: 100)</div>", unsafe_allow_html=True)
     
     try:
-        # Pytrends mandates no more than 5 unique targets queried at exactly the same time!
         trends_target_group = unique_tickers_list[:5] 
-        st.caption(f"Graphing the 5-Year aggregate mindshare scaling relative to leading benchmark across up to five portfolio components: {trends_target_group}")
+        st.caption(f"Graphing the 1-Year aggregate mindshare scaling relative to leading benchmark across up to five portfolio components: {trends_target_group}")
         
-        pytrends = TrendReq(hl='en-US', tz=360, timeout=10) # 10s wait for heavier pull requests
+        pytrends = TrendReq(hl='en-US', tz=360, timeout=10)
         
-        # 'today 5-y' pulls back explicitly from today exactly 5-years past for a holistic landscape graph
-        pytrends.build_payload(kw_list=trends_target_group, cat=0, timeframe='today 5-y')
+        # UPGRADE: Timeline strictly confined to 12 months ('today 12-m') for localized mindshare accuracy
+        pytrends.build_payload(kw_list=trends_target_group, cat=0, timeframe='today 12-m')
         
         trend_df = pytrends.interest_over_time()
         
         if not trend_df.empty:
             if 'isPartial' in trend_df.columns:
-                trend_df = trend_df.drop(columns=['isPartial']) # Formatting drop 
+                trend_df = trend_df.drop(columns=['isPartial'])
                 
             fig = go.Figure()
             colors = ['#1f77b4', '#d62728', '#ff7f0e', '#2ca02c', '#9467bd']
             
-            # Map traces from dataframe visually!
             for idx, col in enumerate(trend_df.columns):
                 fig.add_trace(go.Scatter(
                     x=trend_df.index, y=trend_df[col], 
@@ -247,4 +245,4 @@ if 'master_df' in st.session_state:
         if "429" in str(t_err) or "Quota" in str(t_err):
             st.info("Pytrends has locked standard datacenter API interactions via Cloud deployments (Code 429). Feature mandates Local IP environment / execution rather than Hosted Streams.")
         else:
-            pass # Keep it gracefully swallowed
+            pass
