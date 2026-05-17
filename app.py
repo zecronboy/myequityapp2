@@ -137,3 +137,46 @@ if st.button("Search Stock"):
                 st.markdown("**Health & Efficiency**")
                 st.metric(label="ROA", value=format_data(roa, suffix="%"))
                 st.metric(label="ROE", value=format_data(roe, suffix="%"))
+
+
+# --- NEW CHARTING UPGRADE ---
+        st.write("---")
+        st.subheader(f"📊 {ticker_symbol} Price History (6 Months)")
+        
+        try:
+            # We use our yfinance ninja to download the last 6 months of daily data!
+            chart_stock = yf.Ticker(ticker_symbol)
+            history_data = chart_stock.history(period="6mo")
+            
+            if not history_data.empty:
+                import plotly.graph_objects as go
+                
+                # Create a beautiful Plotly line chart
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=history_data.index, 
+                    y=history_data['Close'],
+                    mode='lines',
+                    name='Closing Price',
+                    line=dict(color='#0078D7', width=2),
+                    fill='tozeroy',  # Adds a nice subtle shading under the line
+                    fillcolor='rgba(0, 120, 215, 0.1)' 
+                ))
+                
+                # Make it look sleek and professional
+                fig.update_layout(
+                    margin=dict(l=20, r=20, t=20, b=20),
+                    height=400,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(showgrid=False),
+                    yaxis=dict(showgrid=True, gridcolor='lightgray', tickprefix=currency_symbol if 'currency_symbol' in locals() else "$")
+                )
+                
+                # Send the chart to the Streamlit Website
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Chart data not available for this ticker.")
+                
+        except Exception as e:
+            st.error(f"Could not load chart: {e}")
