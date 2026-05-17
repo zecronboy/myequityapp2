@@ -83,7 +83,7 @@ if st.button("Search Stock"):
                         change_num = price - previous_close
                 else: 
                     previous_close = info.get('previousClose')
-                    change_num = (price - previous_close) if previous_close else None
+                    change_num = (price - previous_close) if price and previous_close else None
 
                 currency_raw = info.get('currency', 'USD') if info else 'USD'
                 currency_symbol = "HK$" if currency_raw == "HKD" else (currency_raw + " " if currency_raw != "USD" else "$")
@@ -102,41 +102,33 @@ if st.button("Search Stock"):
                 price = None 
 
 
-        # --- DASHBOARD PAINTING ---
+        # --- ✂️ NEW CONDENSED DASHBOARD DESIGN ✂️ ---
         if 'price' in locals() and price is not None:
             engine_used = "Yahoo Global Pipeline" if use_fallback else "Finnhub Pro Pipeline"
             
-            st.subheader(f"{ticker_symbol}")
-            st.metric(label="Current Price", 
-                      value=format_data(price, prefix=currency_symbol), 
-                      delta=format_data(change_num, prefix=currency_symbol))
-            st.caption(f"✅ Route Success: {engine_used}")
-            st.divider() 
+            # Master Ticker and Route Output
+            st.write(f"### {ticker_symbol} Data (Routed via: {engine_used})")
             
-            st.subheader("📊 Fundamental Master List")
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.markdown("**Valuations**")
-                st.metric(label="Trailing P/E", value=format_data(trailing_pe))
-                st.metric(label="Forward P/E", value=format_data(forward_pe))
-                st.metric(label="P/B Ratio", value=format_data(pb_ratio))
-            with col2:
-                st.markdown("**Earnings & Margins**")
-                st.metric(label="EPS (TTM)", value=format_data(eps, prefix=currency_symbol))
-                st.metric(label="Net Profit Margin", value=format_data(net_margin, suffix="%"))
-            with col3:
-                st.markdown("**Growth (YoY)**")
-                st.metric(label="EPS Growth", value=format_data(eps_growth, suffix="%"))
-                st.metric(label="Revenue Growth", value=format_data(rev_growth, suffix="%"))
-            with col4:
-                st.markdown("**Health & Efficiency**")
-                st.metric(label="ROA", value=format_data(roa, suffix="%"))
-                st.metric(label="ROE", value=format_data(roe, suffix="%"))
+            # --- RIBBON LAYOUT 1: Core Metrics & Value ---
+            r1_1, r1_2, r1_3, r1_4, r1_5 = st.columns(5)
+            r1_1.metric(label="Current Price", value=format_data(price, prefix=currency_symbol), delta=format_data(change_num, prefix=currency_symbol))
+            r1_2.metric(label="Trailing P/E", value=format_data(trailing_pe))
+            r1_3.metric(label="Forward P/E", value=format_data(forward_pe))
+            r1_4.metric(label="P/B Ratio", value=format_data(pb_ratio))
+            r1_5.metric(label="EPS (TTM)", value=format_data(eps, prefix=currency_symbol))
+
+            # --- RIBBON LAYOUT 2: Margins, Growth & Health ---
+            st.write("") # Tiny spacer 
+            r2_1, r2_2, r2_3, r2_4, r2_5 = st.columns(5)
+            r2_1.metric(label="Net Margin", value=format_data(net_margin, suffix="%"))
+            r2_2.metric(label="EPS Growth", value=format_data(eps_growth, suffix="%"))
+            r2_3.metric(label="Rev Growth", value=format_data(rev_growth, suffix="%"))
+            r2_4.metric(label="ROA", value=format_data(roa, suffix="%"))
+            r2_5.metric(label="ROE", value=format_data(roe, suffix="%"))
 
 
         # --- 📈 ADVANCED TRADINGVIEW CHARTING 📈 ---
         st.write("---")
-        st.subheader(f"🕯️ Interactive Candlestick Chart")
         
         if "Intraday" in timeframe_choice:
             c_period = "730d"  
@@ -153,18 +145,13 @@ if st.button("Search Stock"):
             
         try:
             chart_stock = yf.Ticker(ticker_symbol)
-            # Fetch data and safely order it just in case!
             history_data = chart_stock.history(period=c_period, interval=c_interval)
             
             if not history_data.empty:
                 history_data = history_data.sort_index()
                 
-                # Math formula to create a Rolling Moving Average Line 
                 history_data['SMA'] = history_data['Close'].rolling(window=ma_window).mean()
                 
-                # --- PRO FIX #1b: THE AVALANCHE PREVENTER ---
-                # We put %Y back into the Hourly labels so duplicate month labels from previous 
-                # years don't scramble Plotly's rendering engine!
                 if c_interval == '1h':
                     clean_dates = history_data.index.strftime('%Y-%m-%d %H:%M')
                 else:
@@ -192,11 +179,12 @@ if st.button("Search Stock"):
                     hoverinfo='skip'
                 ))
                 
+                # --- DOUBLE SIZE CANVAS DEPLOYMENT ---
                 fig.update_layout(
                     dragmode='pan', 
                     xaxis_rangeslider_visible=False,
                     margin=dict(l=20, r=40, t=20, b=20),
-                    height=600,
+                    height=1050, # THE MAGIC UPGRADE: Changed from 600px to an absolutely colossal 1,050 pixels! 
                     hovermode="x unified",
                     yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200, 0.2)', tickprefix=currency_symbol if 'currency_symbol' in locals() else "$", fixedrange=False),
                     xaxis=dict(
