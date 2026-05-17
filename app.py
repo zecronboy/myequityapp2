@@ -27,23 +27,35 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Math formatters that won't panic on empty elements
 def format_large_currency(val):
     if not val or pd.isna(val) or val == 'N/A' or float(val) == 0: return "N/A"
-    num = float(val)
-    if num >= 1e12: return f"{num/1e12:.2f}T"
-    elif num >= 1e9: return f"{num/1e9:.2f}B"
-    elif num >= 1e6: return f"{num/1e6:.2f}M"
-    else: return f"{num:,.0f}"
+    try:
+        num = float(val)
+        if num >= 1e12: return f"{num/1e12:.2f}T"
+        elif num >= 1e9: return f"{num/1e9:.2f}B"
+        elif num >= 1e6: return f"{num/1e6:.2f}M"
+        else: return f"{num:,.0f}"
+    except: return "N/A"
 
 def fmt_val(num):
     return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "N/A"
+
+# Absolute mathematical firewall to shield API pulls turning into TypeErrors!
+def fetch_safe_growth(finn_data, yf_data):
+    if finn_data is not None and isinstance(finn_data, (int, float)):
+        return float(finn_data)
+    elif yf_data is not None and isinstance(yf_data, (int, float)):
+        return float(yf_data) * 100.0
+    return None
+
 
 st.title("💼 Family Office Command Center")
 st.write("Track parameters, query AI logic algorithms, and index mass mindshare volume.")
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Alternative Energy", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF", "ENPH"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Optical Communications", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF", "ENPH"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -53,7 +65,7 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading fundamental spreadsheets & deploying API constraints..."):
+    with st.spinner("Downloading fundamental spreadsheets & locking metric arrays..."):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -93,7 +105,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 yf_info = stock.info 
                 co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Asset").replace("'", "&apos;") 
                 
-                # Prices and Capitalizations
+                # Setup
                 price, prev_close = quote_data.get('c') or yf_info.get('currentPrice') or 0, quote_data.get('pc') or yf_info.get('previousClose')
                 delta_str = ""
                 if price and prev_close and price > 0 and prev_close > 0:
@@ -105,7 +117,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 price_f = f"<strong>{currency_sym}{price:,.2f}</strong>{delta_str}" if price else "N/A"
                 mcap = format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))
                 
-                # Valuations Matrix 
+                # Value Metrics 
                 pe_ttm = metrics.get('peTTM', yf_info.get('trailingPE'))
                 pe_fwd = yf_info.get('forwardPE', metrics.get('peNormalizedAnnual'))
                 peg_ttm = yf_info.get('trailingPegRatio') 
@@ -117,6 +129,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                               f"<span class='meta-lbl'>PEG (T|F): </span>{fmt_val(peg_ttm)} <span style='color:#ccc; padding: 0 4px;'>|</span> {fmt_val(peg_fwd)}<br>" \
                               f"<div style='margin-top:2px;'><span class='meta-lbl'>P/B:</span> {fmt_val(pb_val)} <span style='color:#ccc; padding: 0 4px;'>|</span> <span class='meta-lbl'>P/S:</span> {fmt_val(ps_val)}</div>"
                               
+                # Earnings Setup! 
                 eps_actual, eps_est, eps_diff, eps_prev = None, None, None, None 
                 
                 if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
@@ -140,18 +153,16 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 else: 
                     eps_box = f"<span class='meta-lbl'>ACT EPS: </span>-"
 
-
-                # EXPLICIT QUARTER-DATE TRANSPARENCY BUILDER
+                # THE SHIELDED REVENUE BUILDER 
                 q_rev_val = None
-                q_rev_lbl = "REV (Q)" # Absolute fallback header
+                q_rev_lbl = "REV (Q)" 
                 margin_0, margin_1 = None, None
                 
                 try: 
                     qf_df = stock.quarterly_financials
                     if not qf_df.empty:
-                        # Secret timestamp grabber resolving timeline confusion globally
                         quarter_dt = qf_df.columns[0]
-                        q_rev_lbl = f"REV ({quarter_dt.strftime('%b &apos;%y')})" # Extrapolates explicit string: i.e., REV (Dec '25) 
+                        q_rev_lbl = f"REV ({quarter_dt.strftime('%b &apos;%y')})" 
                         
                         if 'Total Revenue' in qf_df.index and 'Net Income' in qf_df.index:
                             rev_0, net_0 = qf_df.loc['Total Revenue'].iloc[0], qf_df.loc['Net Income'].iloc[0]
@@ -176,16 +187,18 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 
                 marg_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>NET MRG: </span>{marg_str}{marg_qoq_str}</div>"
 
-                yoy, qoq = (metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100), (metrics.get('revenueGrowthQuarterlyYoy') or yf_info.get('quarterlyRevenueGrowth', 0)*100)
-                yoy_qoq_s = f"(Y: <span style='color:#333;font-weight:700'>{f'{yoy:+.1f}%' if yoy else '-'}</span> <span style='color:grey; font-weight:100;'>|</span> Q: <span style='color:#333;font-weight:700'>{f'{qoq:+.1f}%' if qoq else '-'}</span>)"
+                # Math protection algorithms engaged here! 
+                yoy = fetch_safe_growth(metrics.get('revenueGrowthTTMYoy'), yf_info.get('revenueGrowth'))
+                qoq = fetch_safe_growth(metrics.get('revenueGrowthQuarterlyYoy'), yf_info.get('quarterlyRevenueGrowth'))
+                
+                yoy_qoq_s = f"(Y: <span style='color:#333;font-weight:700'>{f'{yoy:+.1f}%' if yoy is not None else '-'}</span> <span style='color:grey; font-weight:100;'>|</span> Q: <span style='color:#333;font-weight:700'>{f'{qoq:+.1f}%' if qoq is not None else '-'}</span>)"
                 rev_str = f"<strong>{currency_sym}{q_rev_val}</strong>" if q_rev_val else "-"
                 
-                # Attaching customized exact timestamp string to UI box cleanly
                 rev_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>{q_rev_lbl}: </span>{rev_str} <span style='font-size:11.5px;color:#7f8c8d;font-weight:600;'>{yoy_qoq_s}</span></div>"
                 pulse_col = f"{eps_box}{rev_box}{marg_box}"
 
 
-                # Dates
+                # Calendar Formatting
                 earn_ts = yf_info.get('earningsTimestamp') 
                 if earn_ts:
                     utc_dt = datetime.utcfromtimestamp(earn_ts)
@@ -193,6 +206,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     earn_date_str = f"<span class='earn-date'>{utc_dt.strftime('%b %d')}</span> <span class='earn-past'>{'(Past)' if is_p else ''}</span>"
                 else: earn_date_str = "-"
 
+                # Retail Scrub Logic
                 hype_html = ""
                 if t in wsb_lookup:
                     c, sent = wsb_lookup[t]['no_of_comments'], wsb_lookup[t]['sentiment']
@@ -212,8 +226,8 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                             except ValueError: ai_take = "Halted by Google Cloud Safety guardrails."
                         else: ai_take = f"Quiet cycle: No public actionable corporate press releases filed recently."
                     except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Restrained by Hard Data Ceiling Limits (Waiting to execute)."
-                        else: ai_take = "Data routing exception encountered."
+                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by Generative ceilings (Traffic overload)."
+                        else: ai_take = f"LLM Routing exception encountered: {str(e)[:45]}..."
                 else: ai_take = "Module requires Generative Studio parameters on host deployment!"
 
                 data_outputs.append({
@@ -221,14 +235,14 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     "VALS": pe_combined, "PULSE": pulse_col, 
                     "Earnings": earn_date_str, "Mindshare": hype_html, "AI_Brief": f"<div class='ai-text'>✨ {ai_take}</div>"
                 })
-            except Exception:
-                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "VALS": "-", "PULSE": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
+                
+            except Exception as loop_e:
+                # !! NEW HARD-CODED EMERGENCY DIAGNOSTIC SYSTEM !!
+                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Crash", "MCAP_PRC": f"<span style='color:red; font-size:12px'>Crash Err: {str(loop_e)}</span>", "VALS": "-", "PULSE": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            
-            # --- OVERCHARGED THROTTLE GATE (Fixes 429 Traps!) --- 
             if ai_was_pinged: time.sleep(5.1)
-            else: time.sleep(0.5)
+            else: time.sleep(0.6)
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
@@ -243,7 +257,7 @@ if 'master_df' in st.session_state:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
         if row["Ticker"] not in unique_tickers_list: unique_tickers_list.append(row["Ticker"])
             
-    # REVISED HTML DEPLOYER FOR DUAL FINANCE MATRICES
+    # MATRICES OUTPUT LAYER 
     for category in unique_cats:
         st.markdown(f"<div class='cat-heading'>{category}</div>", unsafe_allow_html=True)
         cat_df = mdf[mdf['Category'] == category]
