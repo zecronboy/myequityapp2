@@ -4,34 +4,24 @@ import requests
 import yfinance as yf
 import time
 from datetime import datetime
+import google.generativeai as genai
+from pytrends.request import TrendReq
 
 st.set_page_config(page_title="Family Office Hub", layout="wide")
 
-# --- UI STYLING MASTER TEMPLATE ---
 st.markdown("""
     <style>
-        div[data-testid="stSidebar"] [data-testid="stDataFrame"] {
-            font-size: 15px !important;
-            zoom: 1.1;
-        }
-
+        div[data-testid="stSidebar"] [data-testid="stDataFrame"] { font-size: 15px !important; zoom: 1.1; }
         .custom-table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-family: -apple-system, sans-serif; table-layout: auto;}
         .custom-table th { font-size: 11px; font-weight: 600; color: #7f8c8d; border-bottom: 2px solid #bdc3c7; padding: 12px 10px; text-align: left; text-transform: uppercase; line-height: 1.3;}
-        .custom-table td { font-size: 15px; font-weight: 500; border-bottom: 1px solid #e0e0e0; padding: 14px 10px; line-height: 1.6; vertical-align: middle;} 
-        
+        .custom-table td { font-size: 14px; font-weight: 500; border-bottom: 1px solid #e0e0e0; padding: 14px 10px; line-height: 1.5; vertical-align: middle;} 
         .ticker-col { font-size: 21px !important; font-weight: 800; color: #4FA6FF; cursor: help;} 
-        .cat-heading { color: inherit; font-size: 26px; font-weight: bold; border-bottom: 3px solid #4FA6FF; padding-bottom: 6px; margin-bottom: 15px;}
-        
-        .alert-drama { color: #d93025; font-weight: 700; background-color: #fce8e6; padding: 4px 8px; border-radius: 4px; font-size: 13px;}
-        .alert-quiet { color: #1e8e3e; font-weight: 600; font-size: 13px;}
-        
-        .up-move { color: #1e8e3e; font-weight: 700; font-size: 14px; }
-        .dn-move { color: #d93025; font-weight: 700; font-size: 14px; }
-        .earn-date { font-family: monospace; color: #2c3e50; font-size: 14px; font-weight:600;}
-        .earn-past { font-family: monospace; color: #e74c3c; font-size: 11px; font-weight: 700; background: #fadbd8; padding: 2px 4px; border-radius: 3px; margin-left: 5px; vertical-align: top;}
-        
+        .cat-heading { color: inherit; font-size: 24px; font-weight: bold; border-bottom: 3px solid #4FA6FF; padding-bottom: 6px; margin-bottom: 15px;}
+        .up-move { color: #1e8e3e; font-weight: 700; }
+        .dn-move { color: #d93025; font-weight: 700; }
+        .earn-date { font-family: monospace; color: #2c3e50; font-size: 13px; font-weight:600;}
         .meta-lbl { font-size:12px; color: #95a5a6; font-weight:700; text-transform:uppercase; letter-spacing: 0.3px;}
-        .val-sub { font-size: 12px; color: #7f8c8d; }
+        .ai-text { font-size: 12.5px; line-height: 1.4; color: inherit; background-color: rgba(200,200,200,0.1); padding: 6px 10px; border-left: 3px solid #8e44ad; border-radius: 3px; font-style: italic;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -43,142 +33,136 @@ def format_large_currency(val):
     elif num >= 1e6: return f"{num/1e6:.2f}M"
     else: return f"{num:,.0f}"
 
-# Short formatting tool for clean Valuation numbers
 def fmt_val(num):
     return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "N/A"
 
 st.title("💼 Family Office Command Center")
-st.write("Track institutional parameters, analyze forward sentiment catalogs, and predict market events.")
+st.write("Track parameters, query AI logic algorithms, and index mass mindshare volume.")
 
-# --- MODULE 1: THE MANUAL CATEGORY & WATCHLIST EDITOR ---
 st.sidebar.header("📝 Book Ledger")
-st.sidebar.caption("Organize targets visually. Tap table cells directly to make edits.")
-
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({
-        "Category": ["Artificial Intelligence", "Artificial Intelligence", "Fintech Innovation", "Industrial Value", "Commodities / Def."],
-        "Ticker": ["NVDA", "AAPL", "SQ", "GE", "XOM"]
-    })
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Core Artificial Intelligence", "Mega-Caps"], "Ticker": ["NVDA", "AAPL"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
-st.session_state.watchlist = edited_df
-
-valid_rows = [{"Category": str(row['Category']).strip() if str(row['Category']).strip() not in ["", "NAN", "NONE"] else "Core Holdings", "Ticker": str(row['Ticker']).strip().upper()} for _, row in edited_df.iterrows() if str(row['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
+valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
 
 if not valid_rows:
-    st.warning("Empty Database. Insert Assets onto the Left Sidebar pane."); st.stop()
+    st.stop()
 st.write("---")
 
-DRAMA_WORDS = ["buyback", "dilution", "lawsuit", "investigation", "subpoena", "scandal", "acquisition", "layoffs", "merger", "bankruptcy"]
-
-# --- MODULE 2: DENSE PIPELINE PROCESSOR ---
-if st.button("🔄 Command: Sync High-Density Fundamental Matrix", use_container_width=True):
-    with st.spinner("Executing broad API pulls & formatting UI matrices..."):
+if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
+    with st.spinner("Downloading financial footprints & feeding models. Expected pace: 2 sec / Ticker..."):
         
         API_KEY = st.secrets["FINNHUB_KEY"]
+        GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+        
+        if GEMINI_KEY:
+            genai.configure(api_key=GEMINI_KEY)
+            ai_model = genai.GenerativeModel('gemini-1.5-flash')
+            
         data_outputs = []
         progress_bar = st.progress(0)
         
+        # Pre-fetch Retail Mindshare once so we don't bombard the WSB database!
+        wsb_lookup = {}
+        try:
+            wsb_json = requests.get("https://tradestie.com/api/v1/apps/reddit", timeout=5).json()
+            for tick in wsb_json: wsb_lookup[tick['ticker']] = tick
+        except: pass
+        
+        # Init Google Trends Scanner
+        pytrends = TrendReq(hl='en-US', tz=360, timeout=5)
+
         for idx, row in enumerate(valid_rows):
             cat, t = row["Category"], row["Ticker"]
             try:
                 prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}").json()
                 quote_data = requests.get(f"https://finnhub.io/api/v1/quote?symbol={t}&token={API_KEY}").json()
                 earn_json = requests.get(f"https://finnhub.io/api/v1/stock/earnings?symbol={t}&token={API_KEY}").json()
+                metrics = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={t}&metric=all&token={API_KEY}").json().get('metric', {})
 
                 stock = yf.Ticker(t)
                 yf_info = stock.info 
+                co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Asset").replace("'", "&apos;") 
                 
-                raw_name = prof_data.get('name') or yf_info.get('shortName') or yf_info.get('longName') or "Global Asset"
-                co_name = str(raw_name).replace("'", "&apos;") 
-                
-                price, prev_close = quote_data.get('c'), quote_data.get('pc')
-                if price is None or price == 0 or "error" in quote_data: 
-                    price, prev_close = yf_info.get('currentPrice') or yf_info.get('regularMarketPrice'), yf_info.get('previousClose')
-                
+                # Market Execution Basics 
+                price, prev_close = quote_data.get('c') or yf_info.get('currentPrice') or 0, quote_data.get('pc') or yf_info.get('previousClose')
                 delta_str = ""
                 if price and prev_close:
                     move = price - prev_close
                     icon, m_cls = ("▲", "up-move") if move > 0 else ("▼", "dn-move")
                     delta_str = f"<br><span class='{m_cls}'>{icon} {abs(move):.2f} ({move/prev_close * 100:+.2f}%)</span>"
 
-                curr_raw = yf_info.get('currency', 'USD')
-                currency_sym = "$" if curr_raw in ['USD', 'CAD'] else ("£" if curr_raw == "GBP" else "HK$")
+                currency_sym = "$" if yf_info.get('currency', 'USD') in ['USD', 'CAD'] else ("£" if yf_info.get('currency', 'USD') == "GBP" else "HK$")
                 price_f = f"<strong>{currency_sym}{price:,.2f}</strong>{delta_str}" if price else "N/A"
-                mcap = f"<strong>{currency_sym}{format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))}</strong>"
+                mcap = format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))
                 
-                # ------ ULTIMATE VALUATION MATRICES (PE/PEG/PB/PS) ------
-                metrics = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={t}&metric=all&token={API_KEY}").json().get('metric', {})
-                
-                pe_ttm = metrics.get('peTTM', yf_info.get('trailingPE'))
-                pe_fwd = yf_info.get('forwardPE', metrics.get('peNormalizedAnnual'))
-                peg_ttm = yf_info.get('trailingPegRatio') # Rarely indexed for free by all stocks, we gracefully map None 
-                peg_fwd = yf_info.get('pegRatio')         # Yahoo's 5Yr Forward Expected PEG typically 
-                pb_val = metrics.get('pbAnnual', yf_info.get('priceToBook'))
-                ps_val = metrics.get('psTTM', yf_info.get('priceToSalesTrailing12Months'))
-
-                # Multi-line html grouping for the ultimate ratio matrix!
-                pe_combined = (
-                    f"<span class='meta-lbl'>P/E ➔</span> <span class='val-sub'>TTM:</span>{fmt_val(pe_ttm)} <span style='color:grey; font-size:10px;'>|</span> <span class='val-sub'>FWD:</span>{fmt_val(pe_fwd)}<br>"
-                    f"<span class='meta-lbl'>PEG ➔</span> <span class='val-sub'>TTM:</span>{fmt_val(peg_ttm)} <span style='color:grey; font-size:10px;'>|</span> <span class='val-sub'>FWD:</span>{fmt_val(peg_fwd)}<br>"
-                    f"<div style='margin-top: 3px;'><span class='meta-lbl'>P/B:</span> {fmt_val(pb_val)} <span style='color:#ccc; padding:0 3px;'>|</span> <span class='meta-lbl'>P/S:</span> {fmt_val(ps_val)}</div>"
-                )
+                # Valuations
+                pe_combined = f"<span class='meta-lbl'>PE: </span>{fmt_val(metrics.get('peTTM', yf_info.get('trailingPE')))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('forwardPE'))}<br>" \
+                              f"<span class='meta-lbl'>PG: </span>{fmt_val(yf_info.get('trailingPegRatio'))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('pegRatio'))}"
                               
-                # EPS Engine
-                eps_latest_v, eps_prev_v, eps_diff = None, None, None 
-                if isinstance(earn_json, list) and len(earn_json) > 0:
-                    eps_latest_v, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
-                    if len(earn_json) > 1: eps_prev_v = earn_json[1].get('actual')
+                # Earnings & Revenue Box 
+                eps_actual = earn_json[0].get('actual') if earn_json else None 
+                eps_diff = earn_json[0].get('surprisePercent') if earn_json else None 
+                eps_box = f"<span class='meta-lbl'>EPS: </span>{f'${eps_actual:.2f}' if eps_actual else '-'}" + \
+                          (f" <span class='{'up-move' if eps_diff > 0 else 'dn-move'}' style='font-size:11px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
                 
-                if eps_latest_v:
-                    diff_cls, s_pref = ("up-move", "Beat Est by") if (eps_diff and eps_diff >= 0) else ("dn-move", "Missed Est by")
-                    eps_comp = f"<span class='meta-lbl'>Latest (Q):</span> <strong>${eps_latest_v:.2f}</strong> <span class='{diff_cls}' style='font-size:12px;'>( {s_pref} {abs(eps_diff):.1f}% )</span><br>" if eps_diff else f"<span class='meta-lbl'>Latest Q:</span> {eps_latest_v}<br>"
-                    eps_comp += f"<span class='meta-lbl'>Prior (Q-1):</span> <strong>${eps_prev_v:.2f}</strong>" if eps_prev_v else ""
-                else: 
-                    eps_comp = "-" 
-
-                # ADVANCED REVENUE QUARTERLY BUILD
-                q_rev_val = None
                 try: 
-                    qf_df = stock.quarterly_financials
-                    if not qf_df.empty and 'Total Revenue' in qf_df.index:
-                        q_rev_val = format_large_currency(qf_df.loc['Total Revenue'].iloc[0])
-                except: pass
-
-                rev_str = f"{currency_sym}{q_rev_val}" if q_rev_val else "Rstrct"
-                rev_yoy, rev_qoq = (metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100), (metrics.get('revenueGrowthQuarterlyYoy') or yf_info.get('quarterlyRevenueGrowth', 0)*100)
+                    q_rev = format_large_currency(stock.quarterly_financials.loc['Total Revenue'].iloc[0]) if not stock.quarterly_financials.empty else None
+                except: q_rev = None
                 
-                rev_comp = f"<span class='meta-lbl'>Latest (Q): </span><strong>{rev_str}</strong> <span style='font-size:10px;color:#c0392b;font-weight:700;' title='Institutional % surprise poll expectations paywalled.'>(No Est)</span><br>" 
-                rev_comp += f"<span class='meta-lbl'>Y/Y Gro:</span> <strong>{f'{rev_yoy:.1f}%' if rev_yoy else '-'}</strong> <span style='color:#ccc'>|</span> " \
-                            f"<span class='meta-lbl'>Q/Q Gro:</span> <strong>{f'{rev_qoq:.1f}%' if rev_qoq else '-'}</strong>"
+                rev_box = f"<br><span class='meta-lbl'>REV: </span>{currency_sym}{q_rev if q_rev else '-'}" + \
+                          f"<br><span class='meta-lbl'>Y/Y: </span>{(metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100):.1f}%"
 
-                # Upcoming/Dead Event Engine! 
+                # Upcoming Earnings Date 
                 earn_ts = yf_info.get('earningsTimestamp') 
-                if earn_ts:
-                    earn_dt = datetime.utcfromtimestamp(earn_ts)
-                    is_past = earn_dt < datetime.utcnow()
-                    status_lbl = "<span class='earn-past'>(PAST)</span>" if is_past else ""
-                    earn_date_str = f"<span class='earn-date'>{earn_dt.strftime('%b %d, %y')}</span>{status_lbl}"
-                else: earn_date_str = "<span class='meta-lbl'>Unlisted</span>"
+                earn_date_str = f"<span class='earn-date'>{datetime.utcfromtimestamp(earn_ts).strftime('%b %d')} {'(Past)' if datetime.utcfromtimestamp(earn_ts) < datetime.utcnow() else ''}</span>" if earn_ts else "-"
 
-                # Keyword Extraction
+                # ====== THE HYPE QUANTIFIERS (Google Trends + WSB) ======
+                hype_html = ""
+                # 1. WSB Database
+                if t in wsb_lookup:
+                    c, sent = wsb_lookup[t]['no_of_comments'], wsb_lookup[t]['sentiment']
+                    h_clr = "up-move" if sent == "Bullish" else "dn-move"
+                    hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> <strong>{c} Mentions</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
+                else: hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> Quiet / Null<br>"
+                
+                # 2. Google Search Interest (Heavy rate limits require graceful fallback)
                 try:
-                    found_drama = list(set([word.title() for h in [n.get('title', '').lower() for n in stock.news] for word in DRAMA_WORDS if word in h])) if stock.news else []
-                    drama_alert = f"<span class='alert-drama'>🚨: {', '.join(found_drama)}</span>" if found_drama else f"<span class='alert-quiet'>✅ Nominal Media</span>"
-                except: drama_alert = "No Scrape"
-                
-                data_outputs.append({"Category": cat, "Ticker": t, "Name": co_name, "MktCap": mcap, "PriceBox": price_f, "ValuationBox": pe_combined, "EPSBox": eps_comp, "RevBox": rev_comp, "Earnings": earn_date_str, "Sentiment": drama_alert})
-                
-            except Exception as e:
-                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MktCap": "ERR", "PriceBox": "Err", "ValuationBox": "-", "EPSBox": "-", "RevBox": "-", "Earnings": "-", "Sentiment": "-"})
+                    pytrends.build_payload([t], cat=0, timeframe='now 7-d', geo='')
+                    g_data = pytrends.interest_over_time()
+                    g_vol = g_data[t].iloc[-1] if not g_data.empty else "Low"
+                    hype_html += f"<span class='meta-lbl'>G-Trends 7D Score: </span> <strong>{g_vol} / 100</strong>"
+                except: hype_html += f"<span class='meta-lbl'>G-Trends 7D Score: </span> API Blocked"
+
+                # ====== THE AI GENERATIVE READOUT ======
+                ai_take = "Google AI Systems offline / Key Error"
+                if GEMINI_KEY:
+                    try:
+                        raw_headlines = [h.get('title') for h in stock.news][:10] if hasattr(stock, 'news') else []
+                        if raw_headlines:
+                            prompt = f"Analyze these recent headlines for ticker {t}: {raw_headlines}. In exactly one single, short punchy sentence, summarize the core narrative and end with the sentiment status [BULLISH, BEARISH, or NEUTRAL]."
+                            response = ai_model.generate_content(prompt)
+                            ai_take = response.text.replace('\n', '').strip()
+                        else: ai_take = "Insufficient public media headlines available for AI modeling."
+                    except Exception as e:
+                        ai_take = "LLM Generation halted or quota hit."
+
+                data_outputs.append({
+                    "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
+                    "FINS": f"{pe_combined}<br><div style='border-top:1px dashed #ccc; padding-top: 3px; margin-top: 3px;'>{eps_box}{rev_box}</div>",
+                    "Earnings": earn_date_str, "Mindshare": hype_html, "AI_Brief": f"<div class='ai-text'>✨ {ai_take}</div>"
+                })
+            except Exception:
+                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            time.sleep(0.4) 
+            time.sleep(2.0) # 2-SECOND DELAY: Mandatory so Google & Gemini APIs don't permanently ban the stream!! 
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
 
-# --- MODULE 3: THE HTML "PRO GRID" VIEWER ---
+
 if 'master_df' in st.session_state:
     mdf = st.session_state.master_df
     
@@ -190,21 +174,17 @@ if 'master_df' in st.session_state:
         st.markdown(f"<div class='cat-heading'>{category}</div>", unsafe_allow_html=True)
         cat_df = mdf[mdf['Category'] == category]
         
-        # Expanding the new multi-ratio layout header:
         table_html = "<table class='custom-table'>"
-        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 8%'>Mkt Cap</th><th style='width: 14%'>Daily Tape</th><th style='width: 16%'>Master Valuations</th><th style='width: 17%'>Quarterly EPS vs Street</th><th style='width: 17%'>Forward Rev Trajectory</th><th style='width: 10%'>Events Calendar</th><th style='width: 10%'>AI Mention Scrape</th></tr>"
+        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 14%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 9%'>Earning Catalyst</th><th style='width: 19%'>Mindshare Trackers</th><th>🧠 Google AI Narrative Extraction</th></tr>"
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
-            table_html += f"<td class='ticker-col' title='Corporate Entity: {r['Name']}'>{r['Ticker']}</td>" 
-            table_html += f"<td>{r['MktCap']}</td>"
-            table_html += f"<td>{r['PriceBox']}</td>"
-            # Injected New Ratio Data! 
-            table_html += f"<td>{r['ValuationBox']}</td>"
-            table_html += f"<td>{r['EPSBox']}</td>"
-            table_html += f"<td>{r['RevBox']}</td>"
+            table_html += f"<td class='ticker-col' title='Legal Asset Title: {r['Name']}'>{r['Ticker']}</td>" 
+            table_html += f"<td>{r['MCAP_PRC']}</td>"
+            table_html += f"<td>{r['FINS']}</td>"
             table_html += f"<td style='line-height:1.7'>{r['Earnings']}</td>"
-            table_html += f"<td>{r['Sentiment']}</td>"
+            table_html += f"<td>{r['Mindshare']}</td>"
+            table_html += f"<td>{r['AI_Brief']}</td>"
             table_html += "</tr>"
             
         table_html += "</table><br>" 
