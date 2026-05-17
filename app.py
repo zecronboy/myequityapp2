@@ -15,7 +15,7 @@ def format_data(value, prefix="", suffix="", decimals=2):
 st.title("🌎 Global Equities Research Dashboard")
 st.write("Welcome to your personal stock screener!")
 
-# --- UI CONTROL PANEL (Now featuring 2 columns!) ---
+# --- UI CONTROL PANEL ---
 ui_col1, ui_col2 = st.columns(2)
 
 with ui_col1:
@@ -160,12 +160,19 @@ if st.button("Search Stock"):
                 # Math formula to create a Rolling Moving Average Line 
                 history_data['SMA'] = history_data['Close'].rolling(window=ma_window).mean()
                 
+                # --- PRO FIX #1: REMOVING WEEKEND GAPS ---
+                # Convert timestamps to exact string labels so they stack flush with no empty dates!
+                if c_interval == '1h':
+                    clean_dates = history_data.index.strftime('%b %d, %H:%M')
+                else:
+                    clean_dates = history_data.index.strftime('%Y-%m-%d')
+                
                 # Assemble the Visuals
                 fig = go.Figure()
                 
                 # Candlesticks!
                 fig.add_trace(go.Candlestick(
-                    x=history_data.index,
+                    x=clean_dates,
                     open=history_data['Open'],
                     high=history_data['High'],
                     low=history_data['Low'],
@@ -177,27 +184,42 @@ if st.button("Search Stock"):
                 
                 # Orange Simple Moving Average line overlaid!
                 fig.add_trace(go.Scatter(
-                    x=history_data.index,
+                    x=clean_dates,
                     y=history_data['SMA'],
                     mode='lines',
                     line=dict(color='orange', width=2),
-                    name=f'{ma_window} SMA'
+                    name=f'{ma_window} SMA',
+                    hoverinfo='skip'
                 ))
                 
-                # Making it Interactive and professional looking 
+                # Formatting limits and scaling rules 
                 fig.update_layout(
-                    xaxis_rangeslider_visible=False, # We remove the default ugly sub-slider
-                    margin=dict(l=20, r=20, t=20, b=20),
-                    height=550,
-                    hovermode="x unified", # Triggers one clean crosshair box when hovering!
-                    yaxis=dict(showgrid=True, gridcolor='rgba(211,211,211, 0.4)'),
-                    xaxis=dict(showgrid=True, gridcolor='rgba(211,211,211, 0.4)'),
+                    xaxis_rangeslider_visible=False,
+                    margin=dict(l=20, r=40, t=20, b=20),
+                    height=600,
+                    hovermode="x unified",
+                    yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200, 0.2)', tickprefix=currency_symbol if 'currency_symbol' in locals() else "$", fixedrange=False),
+                    xaxis=dict(
+                        showgrid=False, 
+                        type='category', 
+                        nticks=10, 
+                        fixedrange=False
+                    ),
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                # Draw the chart to Streamlit!
-                st.plotly_chart(fig, use_container_width=True)
+                # --- PRO FIX #2: ENABLING TRADINGVIEW SCROLL ZOOM ---
+                # Add 'scrollZoom': True so the mouse wheel scales the candles perfectly
+                st.plotly_chart(
+                    fig, 
+                    use_container_width=True, 
+                    config={
+                        'scrollZoom': True, 
+                        'displayModeBar': True,
+                        'modeBarButtonsToRemove': ['lasso2d', 'select2d']
+                    }
+                )
             else:
                 st.warning("Could not gather history chart data for this specific time frame.")
                 
