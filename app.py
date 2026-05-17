@@ -20,6 +20,7 @@ st.markdown("""
         .up-move { color: #1e8e3e; font-weight: 700; }
         .dn-move { color: #d93025; font-weight: 700; }
         .earn-date { font-family: monospace; color: #2c3e50; font-size: 13px; font-weight:600;}
+        .earn-past { color: #e74c3c; font-size: 12px; font-weight: 600; background: #fadbd8; padding: 2px 4px; border-radius: 4px; margin-left: 3px;}
         .meta-lbl { font-size:12px; color: #95a5a6; font-weight:700; text-transform:uppercase; letter-spacing: 0.3px;}
         .ai-text { font-size: 12.5px; line-height: 1.4; color: inherit; background-color: rgba(200,200,200,0.1); padding: 6px 10px; border-left: 3px solid #8e44ad; border-radius: 3px; font-style: italic;}
     </style>
@@ -41,7 +42,7 @@ st.write("Track parameters, query AI logic algorithms, and index mass mindshare 
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Core Artificial Intelligence", "Mega-Caps"], "Ticker": ["NVDA", "AAPL"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Artificial Intelligence", "Artificial Intelligence", "Fintech Innovation", "Industrial Value", "Commodities / Def."], "Ticker": ["NVDA", "AAPL", "SQ", "GE", "XOM"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -51,10 +52,10 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading financial footprints & feeding models. Expected pace: 2 sec / Ticker..."):
+    with st.spinner("Downloading financial footprints & feeding models..."):
         
-        API_KEY = st.secrets["FINNHUB_KEY"]
-        GEMINI_KEY = st.secrets.get("GEMINI_API_KEY")
+        API_KEY = st.secrets.get("FINNHUB_KEY", "")
+        GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
         
         if GEMINI_KEY:
             genai.configure(api_key=GEMINI_KEY)
@@ -63,32 +64,30 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
         data_outputs = []
         progress_bar = st.progress(0)
         
-        # Pre-fetch Retail Mindshare once so we don't bombard the WSB database!
         wsb_lookup = {}
         try:
             wsb_json = requests.get("https://tradestie.com/api/v1/apps/reddit", timeout=5).json()
             for tick in wsb_json: wsb_lookup[tick['ticker']] = tick
         except: pass
         
-        # Init Google Trends Scanner
         pytrends = TrendReq(hl='en-US', tz=360, timeout=5)
 
         for idx, row in enumerate(valid_rows):
             cat, t = row["Category"], row["Ticker"]
             try:
-                prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}").json()
-                quote_data = requests.get(f"https://finnhub.io/api/v1/quote?symbol={t}&token={API_KEY}").json()
-                earn_json = requests.get(f"https://finnhub.io/api/v1/stock/earnings?symbol={t}&token={API_KEY}").json()
-                metrics = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={t}&metric=all&token={API_KEY}").json().get('metric', {})
+                prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}").json() if API_KEY else {}
+                quote_data = requests.get(f"https://finnhub.io/api/v1/quote?symbol={t}&token={API_KEY}").json() if API_KEY else {}
+                earn_json = requests.get(f"https://finnhub.io/api/v1/stock/earnings?symbol={t}&token={API_KEY}").json() if API_KEY else []
+                metrics = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={t}&metric=all&token={API_KEY}").json().get('metric', {}) if API_KEY else {}
 
                 stock = yf.Ticker(t)
                 yf_info = stock.info 
                 co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Asset").replace("'", "&apos;") 
                 
-                # Market Execution Basics 
+                # Prices 
                 price, prev_close = quote_data.get('c') or yf_info.get('currentPrice') or 0, quote_data.get('pc') or yf_info.get('previousClose')
                 delta_str = ""
-                if price and prev_close:
+                if price and prev_close and price > 0 and prev_close > 0:
                     move = price - prev_close
                     icon, m_cls = ("▲", "up-move") if move > 0 else ("▼", "dn-move")
                     delta_str = f"<br><span class='{m_cls}'>{icon} {abs(move):.2f} ({move/prev_close * 100:+.2f}%)</span>"
@@ -97,56 +96,62 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 price_f = f"<strong>{currency_sym}{price:,.2f}</strong>{delta_str}" if price else "N/A"
                 mcap = format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))
                 
-                # Valuations
                 pe_combined = f"<span class='meta-lbl'>PE: </span>{fmt_val(metrics.get('peTTM', yf_info.get('trailingPE')))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('forwardPE'))}<br>" \
                               f"<span class='meta-lbl'>PG: </span>{fmt_val(yf_info.get('trailingPegRatio'))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('pegRatio'))}"
                               
-                # Earnings & Revenue Box 
-                eps_actual = earn_json[0].get('actual') if earn_json else None 
-                eps_diff = earn_json[0].get('surprisePercent') if earn_json else None 
+                # Earnings logic (Adding failsafe check to list)
+                eps_actual, eps_diff = None, None 
+                if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
+                    eps_actual, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
                 eps_box = f"<span class='meta-lbl'>EPS: </span>{f'${eps_actual:.2f}' if eps_actual else '-'}" + \
                           (f" <span class='{'up-move' if eps_diff > 0 else 'dn-move'}' style='font-size:11px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
                 
                 try: 
                     q_rev = format_large_currency(stock.quarterly_financials.loc['Total Revenue'].iloc[0]) if not stock.quarterly_financials.empty else None
                 except: q_rev = None
-                
-                rev_box = f"<br><span class='meta-lbl'>REV: </span>{currency_sym}{q_rev if q_rev else '-'}" + \
-                          f"<br><span class='meta-lbl'>Y/Y: </span>{(metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100):.1f}%"
+                rev_box = f"<br><span class='meta-lbl'>REV: </span>{currency_sym}{q_rev if q_rev else '-'}<br><span class='meta-lbl'>Y/Y: </span>{(metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100):.1f}%"
 
                 # Upcoming Earnings Date 
                 earn_ts = yf_info.get('earningsTimestamp') 
-                earn_date_str = f"<span class='earn-date'>{datetime.utcfromtimestamp(earn_ts).strftime('%b %d')} {'(Past)' if datetime.utcfromtimestamp(earn_ts) < datetime.utcnow() else ''}</span>" if earn_ts else "-"
+                if earn_ts:
+                    utc_dt = datetime.utcfromtimestamp(earn_ts)
+                    is_p = utc_dt < datetime.utcnow()
+                    earn_date_str = f"<span class='earn-date'>{utc_dt.strftime('%b %d')}</span> <span class='earn-past'>{'(Past)' if is_p else ''}</span>"
+                else: earn_date_str = "-"
 
-                # ====== THE HYPE QUANTIFIERS (Google Trends + WSB) ======
                 hype_html = ""
-                # 1. WSB Database
                 if t in wsb_lookup:
                     c, sent = wsb_lookup[t]['no_of_comments'], wsb_lookup[t]['sentiment']
                     h_clr = "up-move" if sent == "Bullish" else "dn-move"
                     hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> <strong>{c} Mentions</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
                 else: hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> Quiet / Null<br>"
                 
-                # 2. Google Search Interest (Heavy rate limits require graceful fallback)
                 try:
                     pytrends.build_payload([t], cat=0, timeframe='now 7-d', geo='')
                     g_data = pytrends.interest_over_time()
-                    g_vol = g_data[t].iloc[-1] if not g_data.empty else "Low"
-                    hype_html += f"<span class='meta-lbl'>G-Trends 7D Score: </span> <strong>{g_vol} / 100</strong>"
-                except: hype_html += f"<span class='meta-lbl'>G-Trends 7D Score: </span> API Blocked"
+                    hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <strong>{g_data[t].iloc[-1]} / 100</strong>"
+                except: hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <span style='color:grey;'>Block (Shared IP)</span>"
 
-                # ====== THE AI GENERATIVE READOUT ======
-                ai_take = "Google AI Systems offline / Key Error"
+                # ====== THE CORRECTED AI MODULE ======
+                ai_take = "Key missing / Framework unlinked."
                 if GEMINI_KEY:
                     try:
-                        raw_headlines = [h.get('title') for h in stock.news][:10] if hasattr(stock, 'news') else []
-                        if raw_headlines:
-                            prompt = f"Analyze these recent headlines for ticker {t}: {raw_headlines}. In exactly one single, short punchy sentence, summarize the core narrative and end with the sentiment status [BULLISH, BEARISH, or NEUTRAL]."
+                        raw_headlines = [h.get('title') for h in stock.news][:10] if hasattr(stock, 'news') and stock.news else []
+                        if len(raw_headlines) > 0:
+                            prompt = f"Analyze these financial headlines for {t}: {raw_headlines}. In exactly one punchy sentence, summarize the core narrative and state if it is [BULLISH, BEARISH, or NEUTRAL]."
                             response = ai_model.generate_content(prompt)
-                            ai_take = response.text.replace('\n', '').strip()
-                        else: ai_take = "Insufficient public media headlines available for AI modeling."
+                            try:
+                                ai_take = response.text.replace('\n', '').strip()
+                            except ValueError: # Catch AI Safety Guideline blockers
+                                ai_take = "Output restricted by Google AI content safety guardrails."
+                        else: ai_take = "No significant headlines currently available via Yahoo feeds."
                     except Exception as e:
-                        ai_take = "LLM Generation halted or quota hit."
+                        error_msg = str(e)
+                        if "429" in error_msg or "quota" in error_msg.lower():
+                            ai_take = f"LLM Halt: Google Gemini Free-Tier Quota Hit (API rate limit exceeded)."
+                        else:
+                            # PRINTING THE RAW ERROR TO DIAGNOSE
+                            ai_take = f"LLM Auth Failure: {error_msg[:60]}..." 
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
@@ -157,7 +162,8 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            time.sleep(2.0) # 2-SECOND DELAY: Mandatory so Google & Gemini APIs don't permanently ban the stream!! 
+            # Mathematically necessary to sleep at least 4.0 sec to satisfy Gemini's 15 calls per minute rule! 
+            time.sleep(3.5) 
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
@@ -175,7 +181,7 @@ if 'master_df' in st.session_state:
         cat_df = mdf[mdf['Category'] == category]
         
         table_html = "<table class='custom-table'>"
-        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 14%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 9%'>Earning Catalyst</th><th style='width: 19%'>Mindshare Trackers</th><th>🧠 Google AI Narrative Extraction</th></tr>"
+        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 13%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 9%'>Earning Catalyst</th><th style='width: 19%'>Mindshare Trackers</th><th>🧠 Google AI Narrative Extraction</th></tr>"
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
