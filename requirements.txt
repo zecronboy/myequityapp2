@@ -1,3 +1,5 @@
 yfinance
 curl_cffi
 plotly
+google-generativeai
+pytrends
