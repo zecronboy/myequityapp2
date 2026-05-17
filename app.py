@@ -21,7 +21,7 @@ st.markdown("""
         .up-move { color: #1e8e3e; font-weight: 700; }
         .dn-move { color: #d93025; font-weight: 700; }
         .earn-date { font-family: monospace; color: #2c3e50; font-size: 13px; font-weight:600;}
-        .earn-past { color: #e74c3c; font-size: 12px; font-weight: 600; background: #fadbd8; padding: 2px 4px; border-radius: 4px; margin-left: 3px;}
+        .earn-past { color: #e74c3c; font-size: 11px; font-weight: 700; background: #fadbd8; padding: 2px 5px; border-radius: 4px; margin-left: 3px; vertical-align: top;}
         .meta-lbl { font-size:12px; color: #95a5a6; font-weight:700; text-transform:uppercase; letter-spacing: 0.3px;}
         .ai-text { font-size: 12.5px; line-height: 1.5; color: #444; background-color: rgba(142,68,173,0.06); padding: 8px 10px; border-left: 4px solid #8e44ad; border-radius: 3px; font-style: italic;}
     </style>
@@ -36,14 +36,14 @@ def format_large_currency(val):
     else: return f"{num:,.0f}"
 
 def fmt_val(num):
-    return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "N/A"
+    return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "-"
 
 st.title("💼 Family Office Command Center")
 st.write("Track parameters, query AI logic algorithms, and index mass mindshare volume.")
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Optical Communications", "Alternative Energy", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF", "ENPH", "SEDG"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Alternative Energy", "Alternative Energy"], "Ticker": ["AAOI", "ENPH", "SEDG"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -53,7 +53,7 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading financial footprints & establishing stable LLM cadence... (May take 30+ secs depending on book size)"):
+    with st.spinner("Downloading fundamental spreadsheets & running data parsers... (Avg wait: 4 sec / stock)"):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -94,6 +94,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 yf_info = stock.info 
                 co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Asset").replace("'", "&apos;") 
                 
+                # Prices and Capitalizations
                 price, prev_close = quote_data.get('c') or yf_info.get('currentPrice') or 0, quote_data.get('pc') or yf_info.get('previousClose')
                 delta_str = ""
                 if price and prev_close and price > 0 and prev_close > 0:
@@ -105,20 +106,60 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 price_f = f"<strong>{currency_sym}{price:,.2f}</strong>{delta_str}" if price else "N/A"
                 mcap = format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))
                 
-                pe_combined = f"<span class='meta-lbl'>PE: </span>{fmt_val(metrics.get('peTTM', yf_info.get('trailingPE')))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('forwardPE'))}<br>" \
-                              f"<span class='meta-lbl'>PG: </span>{fmt_val(yf_info.get('trailingPegRatio'))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('pegRatio'))}"
+                # ----- MODULE FIX: VALUATIONS RESTORED (PE/PEG/PB/PS) -----
+                pe_ttm = metrics.get('peTTM', yf_info.get('trailingPE'))
+                pe_fwd = yf_info.get('forwardPE', metrics.get('peNormalizedAnnual'))
+                peg_ttm = yf_info.get('trailingPegRatio') 
+                peg_fwd = yf_info.get('pegRatio')         
+                pb_val = metrics.get('pbAnnual', yf_info.get('priceToBook'))
+                ps_val = metrics.get('psTTM', yf_info.get('priceToSalesTrailing12Months'))
+                
+                pe_combined = f"<span class='meta-lbl'>P/E (T|F): </span>{fmt_val(pe_ttm)} <span style='color:#ccc; padding: 0 4px;'>|</span> {fmt_val(pe_fwd)}<br>" \
+                              f"<span class='meta-lbl'>PEG (T|F): </span>{fmt_val(peg_ttm)} <span style='color:#ccc; padding: 0 4px;'>|</span> {fmt_val(peg_fwd)}<br>" \
+                              f"<div style='margin-top:2px;'><span class='meta-lbl'>P/B:</span> {fmt_val(pb_val)} <span style='color:#ccc; padding: 0 4px;'>|</span> <span class='meta-lbl'>P/S:</span> {fmt_val(ps_val)}</div>"
                               
+                # ----- NEW QUARTERLY PULSE ENGINE: (Rev/Margin Data Math) -----
                 eps_actual, eps_diff = None, None 
                 if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
                     eps_actual, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
-                eps_box = f"<span class='meta-lbl'>EPS: </span>{f'${eps_actual:.2f}' if eps_actual else '-'}" + \
-                          (f" <span class='{'up-move' if eps_diff and eps_diff > 0 else 'dn-move'}' style='font-size:11px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
+                eps_box = f"<span class='meta-lbl'>EPS: </span>{f'<strong>${eps_actual:.2f}</strong>' if eps_actual else '-'}" + \
+                          (f" <span class='{'up-move' if eps_diff and eps_diff > 0 else 'dn-move'}' style='font-size:11.5px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
                 
+                # Revenue / Profit Logics! 
+                q_rev_val, q_margin, q_margin_qoq = None, None, None
                 try: 
-                    q_rev = format_large_currency(stock.quarterly_financials.loc['Total Revenue'].iloc[0]) if not stock.quarterly_financials.empty else None
-                except: q_rev = None
-                rev_box = f"<br><span class='meta-lbl'>REV: </span>{currency_sym}{q_rev if q_rev else '-'}<br><span class='meta-lbl'>Y/Y: </span>{(metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100):.1f}%"
+                    qf_df = stock.quarterly_financials
+                    if not qf_df.empty:
+                        if 'Total Revenue' in qf_df.index: q_rev_val = qf_df.loc['Total Revenue'].iloc[0]
+                        
+                        # Hard QoQ margin Math dynamically extracted! 
+                        if 'Total Revenue' in qf_df.index and 'Net Income' in qf_df.index:
+                            rev_0, net_0 = qf_df.loc['Total Revenue'].iloc[0], qf_df.loc['Net Income'].iloc[0]
+                            if pd.notna(rev_0) and rev_0 != 0 and pd.notna(net_0): q_margin = (net_0 / rev_0) * 100
+                            
+                            if len(qf_df.columns) > 1:
+                                rev_1, net_1 = qf_df.loc['Total Revenue'].iloc[1], qf_df.loc['Net Income'].iloc[1]
+                                if pd.notna(rev_1) and rev_1 != 0 and pd.notna(net_1):
+                                    q_margin_qoq = q_margin - ((net_1 / rev_1) * 100) # Margin percentage shift (e.g. up +200 bps)
+                except: pass
 
+                # Fallback to older records if sheet incomplete!
+                if q_margin is None and yf_info.get('profitMargins'): q_margin = yf_info.get('profitMargins') * 100
+                marg_str = f"<strong>{q_margin:.1f}%</strong>" if q_margin is not None else "-"
+                marg_qoq_str = f" <span class='{'up-move' if q_margin_qoq > 0 else 'dn-move'}' style='font-size:11.5px;'>( {q_margin_qoq:+.1f}% QoQ )</span>" if q_margin_qoq is not None else ""
+                marg_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>NET MRG: </span>{marg_str}{marg_qoq_str}</div>"
+
+                # Rev Str Formats
+                yoy, qoq = (metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100), (metrics.get('revenueGrowthQuarterlyYoy') or yf_info.get('quarterlyRevenueGrowth', 0)*100)
+                yoy_qoq_s = f"(Y: <span style='color:#333;font-weight:700'>{f'{yoy:+.1f}%' if yoy else '-'}</span> <span style='color:grey; font-weight:100;'>|</span> Q: <span style='color:#333;font-weight:700'>{f'{qoq:+.1f}%' if qoq else '-'}</span>)"
+                rev_str = f"<strong>{currency_sym}{format_large_currency(q_rev_val)}</strong>" if q_rev_val else "-"
+                rev_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>REV (Q): </span>{rev_str} <span style='font-size:11.5px;color:#7f8c8d;font-weight:600;'>{yoy_qoq_s}</span></div>"
+
+                # Pulse Assembler 
+                pulse_col = f"{eps_box}{rev_box}{marg_box}"
+
+
+                # Date Formatting! 
                 earn_ts = yf_info.get('earningsTimestamp') 
                 if earn_ts:
                     utc_dt = datetime.utcfromtimestamp(earn_ts)
@@ -130,8 +171,8 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 if t in wsb_lookup:
                     c, sent = wsb_lookup[t]['no_of_comments'], wsb_lookup[t]['sentiment']
                     h_clr = "up-move" if sent == "Bullish" else "dn-move"
-                    hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> <strong>{c} Posts/Day</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
-                else: hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> Zero Tractions<br>"
+                    hype_html += f"<span class='meta-lbl'>Reddit Heat: </span> <strong>{c} Posts</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
+                else: hype_html += f"<span class='meta-lbl'>Reddit Heat: </span> Quiet<br>"
 
                 ai_take = ""
                 if GEMINI_KEY and ai_model is not None:
@@ -145,17 +186,17 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                             except ValueError: ai_take = "Halted by Google Cloud Safety guardrails."
                         else: ai_take = f"Quiet cycle: No public actionable corporate press releases filed recently."
                     except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by API Ceilings."
-                        else: ai_take = "Data routing exception."
-                else: ai_take = "System awaiting verified Intelligence Framework key."
+                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by Generative ceilings (Traffic overload)."
+                        else: ai_take = "Data routing exception encountered."
+                else: ai_take = "Module requires Generative Studio parameters on host deployment!"
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
-                    "FINS": f"{pe_combined}<br><div style='border-top:1px dashed #ccc; padding-top: 3px; margin-top: 3px;'>{eps_box}{rev_box}</div>",
+                    "VALS": pe_combined, "PULSE": pulse_col, 
                     "Earnings": earn_date_str, "Mindshare": hype_html, "AI_Brief": f"<div class='ai-text'>✨ {ai_take}</div>"
                 })
             except Exception:
-                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
+                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "VALS": "-", "PULSE": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
             if ai_was_pinged: time.sleep(4.2)
@@ -174,19 +215,21 @@ if 'master_df' in st.session_state:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
         if row["Ticker"] not in unique_tickers_list: unique_tickers_list.append(row["Ticker"])
             
-    # PRINT THE GRID! 
+    # REVISED HTML DEPLOYER FOR "DUAL FINANCE" MATRICES!
     for category in unique_cats:
         st.markdown(f"<div class='cat-heading'>{category}</div>", unsafe_allow_html=True)
         cat_df = mdf[mdf['Category'] == category]
         
         table_html = "<table class='custom-table'>"
-        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 12%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 10%'>Earning Catalyst</th><th style='width: 13%'>Reddit Heat</th><th>🧠 Generative AI Analysis Pipeline</th></tr>"
+        # Added Width-Rules ensuring margins, PE arrays, etc remain mathematically balanced onscreen. 
+        table_html += "<tr><th style='width: 7%'>Asset</th><th style='width: 12%'>Mkt Cap & Pricing</th><th style='width: 15%'>Valuations Engine</th><th style='width: 18%'>The Quarterly Pulse (YoY/QoQ)</th><th style='width: 10%'>Events</th><th style='width: 13%'>Crowd Trackers</th><th>🧠 Generative Sector Logic</th></tr>"
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
-            table_html += f"<td class='ticker-col' title='Corporate Entity Verification: {r['Name']}'>{r['Ticker']}</td>" 
+            table_html += f"<td class='ticker-col' title='System Tracking Name: {r['Name']}'>{r['Ticker']}</td>" 
             table_html += f"<td>{r['MCAP_PRC']}</td>"
-            table_html += f"<td>{r['FINS']}</td>"
+            table_html += f"<td>{r['VALS']}</td>"
+            table_html += f"<td>{r['PULSE']}</td>"
             table_html += f"<td style='line-height:1.7'>{r['Earnings']}</td>"
             table_html += f"<td>{r['Mindshare']}</td>"
             table_html += f"<td>{r['AI_Brief']}</td>"
@@ -195,18 +238,15 @@ if 'master_df' in st.session_state:
         table_html += "</table><br>" 
         st.markdown(table_html, unsafe_allow_html=True)
     
-    
-    # ====== MODULE 4: MEGA GOOGLE TRENDS Mindshare Comparative Graphic ======
     st.write("---")
-    st.markdown("<div class='cat-heading'>🌍 Search Intensity Metrics (Comparative Max Volume: 100)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='cat-heading'>🌍 Search Intensity Metrics (Trailing 12-Mo Catalyst Runways)</div>", unsafe_allow_html=True)
     
     try:
         trends_target_group = unique_tickers_list[:5] 
-        st.caption(f"Graphing the 1-Year aggregate mindshare scaling relative to leading benchmark across up to five portfolio components: {trends_target_group}")
-        
+        st.caption(f"Charting real-world algorithmic internet data-interest shifts relative to trailing baseline levels ({trends_target_group})")
         pytrends = TrendReq(hl='en-US', tz=360, timeout=10)
         
-        # UPGRADE: Timeline strictly confined to 12 months ('today 12-m') for localized mindshare accuracy
+        # TIMEFRAME FIX SECURED ('today 12-m' directly extracts pure 365D views from cloud servers).
         pytrends.build_payload(kw_list=trends_target_group, cat=0, timeframe='today 12-m')
         
         trend_df = pytrends.interest_over_time()
@@ -229,7 +269,7 @@ if 'master_df' in st.session_state:
                 height=450,
                 margin=dict(l=20, r=40, t=20, b=20),
                 hovermode="x unified",
-                yaxis=dict(title='Relative Intensity Scale', showgrid=True, gridcolor='rgba(200,200,200, 0.2)', fixedrange=False),
+                yaxis=dict(title='1YR High=100 Scale Index', showgrid=True, gridcolor='rgba(200,200,200, 0.2)', fixedrange=False),
                 xaxis=dict(showgrid=False, fixedrange=False),
                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -237,12 +277,7 @@ if 'master_df' in st.session_state:
             st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
             
         else:
-            st.warning("Trend servers rendered null output. Search frequency too weak to scale across assets selected.")
+            st.warning("Query response null. Intensity algorithms below chartable scale data bounds on timeframe selected.")
 
-    except requests.exceptions.Timeout:
-         st.error("Ping failure: Global Google Search endpoints declined initial sync timing threshold (Shared Servers hit Quotas occasionally!). Run sequence again.")
     except Exception as t_err:
-        if "429" in str(t_err) or "Quota" in str(t_err):
-            st.info("Pytrends has locked standard datacenter API interactions via Cloud deployments (Code 429). Feature mandates Local IP environment / execution rather than Hosted Streams.")
-        else:
-            pass
+        pass
