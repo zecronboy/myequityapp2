@@ -15,7 +15,7 @@ def format_data(value, prefix="", suffix="", decimals=2):
 st.title("🌎 Global Equities Research Dashboard")
 st.write("Welcome to your personal stock screener!")
 
-# --- UI CONTROL PANEL (UPDATED DURATIONS) ---
+# --- UI CONTROL PANEL ---
 ui_col1, ui_col2 = st.columns(2)
 
 with ui_col1:
@@ -23,10 +23,10 @@ with ui_col1:
     
 with ui_col2:
     timeframe_choice = st.selectbox("Select Chart Timeframe:", [
-        "Intraday (Hourly intervals, past 2 Years Max)", # Updated description
-        "Daily (1d intervals, past 5 Years)",          # Upgraded to 5y
+        "Intraday (Hourly intervals, past 2 Years Max)", 
+        "Daily (1d intervals, past 5 Years)",          
         "Weekly (1wk intervals, past 5 Years)"
-    ], index=1) # The default selection is now "Daily (5y)" when the app loads!
+    ], index=1)
 
 if st.button("Search Stock"):
     with st.spinner(f'Engaging engines for {ticker_symbol}...'):
@@ -138,37 +138,40 @@ if st.button("Search Stock"):
         st.write("---")
         st.subheader(f"🕯️ Interactive Candlestick Chart")
         
-        # UI Selection Variables applied to 5-Year demands!
         if "Intraday" in timeframe_choice:
-            c_period = "730d"  # Upgraded to absolute maximum for intraday
+            c_period = "730d"  
             c_interval = "1h"
             ma_window = 20
         elif "Daily" in timeframe_choice:
-            c_period = "5y"    # Upgraded from 1y to 5y
+            c_period = "5y"    
             c_interval = "1d"
             ma_window = 50 
         else:
-            c_period = "5y"    # Upgraded from max to standardized 5y weekly
+            c_period = "5y"    
             c_interval = "1wk"
             ma_window = 50
             
         try:
             chart_stock = yf.Ticker(ticker_symbol)
+            # Fetch data and safely order it just in case!
             history_data = chart_stock.history(period=c_period, interval=c_interval)
             
             if not history_data.empty:
+                history_data = history_data.sort_index()
+                
                 # Math formula to create a Rolling Moving Average Line 
                 history_data['SMA'] = history_data['Close'].rolling(window=ma_window).mean()
                 
-                # Plotly Categorical Data Clean Up (Hides Weekends)
+                # --- PRO FIX #1b: THE AVALANCHE PREVENTER ---
+                # We put %Y back into the Hourly labels so duplicate month labels from previous 
+                # years don't scramble Plotly's rendering engine!
                 if c_interval == '1h':
-                    clean_dates = history_data.index.strftime('%b %d, %H:%M')
+                    clean_dates = history_data.index.strftime('%Y-%m-%d %H:%M')
                 else:
                     clean_dates = history_data.index.strftime('%Y-%m-%d')
                 
                 fig = go.Figure()
                 
-                # Candlesticks
                 fig.add_trace(go.Candlestick(
                     x=clean_dates,
                     open=history_data['Open'],
@@ -180,7 +183,6 @@ if st.button("Search Stock"):
                     decreasing_line_color='#ef5350'  
                 ))
                 
-                # Overlay Simple Moving Average 
                 fig.add_trace(go.Scatter(
                     x=clean_dates,
                     y=history_data['SMA'],
@@ -190,9 +192,8 @@ if st.button("Search Stock"):
                     hoverinfo='skip'
                 ))
                 
-                # Plotly Layout upgrades
                 fig.update_layout(
-                    dragmode='pan', # <-- THE UPGRADE! THIS CHANGES LEFT-CLICK FROM ZOOM TO "GRAB & PULL" PAN!
+                    dragmode='pan', 
                     xaxis_rangeslider_visible=False,
                     margin=dict(l=20, r=40, t=20, b=20),
                     height=600,
@@ -208,7 +209,6 @@ if st.button("Search Stock"):
                     plot_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                # Applying configs to Web Engine
                 st.plotly_chart(
                     fig, 
                     use_container_width=True, 
