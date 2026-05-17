@@ -21,7 +21,7 @@ st.markdown("""
         .up-move { color: #1e8e3e; font-weight: 700; }
         .dn-move { color: #d93025; font-weight: 700; }
         .earn-date { font-family: monospace; color: #2c3e50; font-size: 13px; font-weight:600;}
-        .earn-past { color: #e74c3c; font-size: 11px; font-weight: 700; background: #fadbd8; padding: 2px 5px; border-radius: 4px; margin-left: 3px; vertical-align: top;}
+        .earn-past { color: #e74c3c; font-size: 12px; font-weight: 600; background: #fadbd8; padding: 2px 5px; border-radius: 4px; margin-left: 3px; vertical-align: top;}
         .meta-lbl { font-size:12px; color: #95a5a6; font-weight:700; text-transform:uppercase; letter-spacing: 0.3px;}
         .ai-text { font-size: 12.5px; line-height: 1.5; color: #444; background-color: rgba(142,68,173,0.06); padding: 8px 10px; border-left: 4px solid #8e44ad; border-radius: 3px; font-style: italic;}
     </style>
@@ -36,14 +36,14 @@ def format_large_currency(val):
     else: return f"{num:,.0f}"
 
 def fmt_val(num):
-    return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "-"
+    return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "N/A"
 
 st.title("💼 Family Office Command Center")
 st.write("Track parameters, query AI logic algorithms, and index mass mindshare volume.")
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Alternative Energy", "Alternative Energy"], "Ticker": ["AAOI", "ENPH", "SEDG"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -66,8 +66,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 chosen_model = 'gemini-1.5-flash'
                 for vm in available:
                     if 'gemini-1.5' in vm or 'gemini-flash' in vm or 'gemini-pro' in vm:
-                        chosen_model = vm
-                        break
+                        chosen_model = vm; break
                 ai_model = genai.GenerativeModel(chosen_model.replace("models/", ""))
             except: pass
 
@@ -106,7 +105,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 price_f = f"<strong>{currency_sym}{price:,.2f}</strong>{delta_str}" if price else "N/A"
                 mcap = format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))
                 
-                # ----- MODULE FIX: VALUATIONS RESTORED (PE/PEG/PB/PS) -----
+                # Valuations Matrix 
                 pe_ttm = metrics.get('peTTM', yf_info.get('trailingPE'))
                 pe_fwd = yf_info.get('forwardPE', metrics.get('peNormalizedAnnual'))
                 peg_ttm = yf_info.get('trailingPegRatio') 
@@ -118,48 +117,73 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                               f"<span class='meta-lbl'>PEG (T|F): </span>{fmt_val(peg_ttm)} <span style='color:#ccc; padding: 0 4px;'>|</span> {fmt_val(peg_fwd)}<br>" \
                               f"<div style='margin-top:2px;'><span class='meta-lbl'>P/B:</span> {fmt_val(pb_val)} <span style='color:#ccc; padding: 0 4px;'>|</span> <span class='meta-lbl'>P/S:</span> {fmt_val(ps_val)}</div>"
                               
-                # ----- NEW QUARTERLY PULSE ENGINE: (Rev/Margin Data Math) -----
-                eps_actual, eps_diff = None, None 
-                if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
-                    eps_actual, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
-                eps_box = f"<span class='meta-lbl'>EPS: </span>{f'<strong>${eps_actual:.2f}</strong>' if eps_actual else '-'}" + \
-                          (f" <span class='{'up-move' if eps_diff and eps_diff > 0 else 'dn-move'}' style='font-size:11.5px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
+                # --- UPGRADED DUAL EPS VS ESTIMATE MODULE ---
+                eps_actual, eps_est, eps_diff, eps_prev = None, None, None, None 
                 
-                # Revenue / Profit Logics! 
-                q_rev_val, q_margin, q_margin_qoq = None, None, None
+                # Data pull matching rules 
+                if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
+                    eps_actual = earn_json[0].get('actual')
+                    eps_est = earn_json[0].get('estimate')
+                    eps_diff = earn_json[0].get('surprisePercent')
+                    if len(earn_json) > 1:
+                        eps_prev = earn_json[1].get('actual')
+
+                if eps_actual is not None:
+                    # Grey brackets for analysts estimates natively wrapped to inline outputs
+                    est_str = f" <span style='font-size:12px;color:#7f8c8d;font-weight:bold'>(Est: {currency_sym}{eps_est:.2f})</span>" if eps_est is not None else ""
+                    
+                    diff_str = ""
+                    if eps_diff is not None:
+                        diff_word = "Beat" if eps_diff > 0 else "Miss"
+                        m_clr = "up-move" if eps_diff > 0 else "dn-move"
+                        diff_str = f" <span class='{m_clr}' style='font-size:11.5px;'>({diff_word} {abs(eps_diff):.1f}%)</span>"
+                    
+                    prev_str = f"<br><span class='meta-lbl'>Prior Q: </span>{currency_sym}{eps_prev:.2f}" if eps_prev is not None else ""
+                    
+                    # Combines line blocks together
+                    eps_box = f"<span class='meta-lbl'>ACT EPS: </span><strong>{currency_sym}{eps_actual:.2f}</strong>{est_str}{diff_str}{prev_str}"
+                else: 
+                    eps_box = f"<span class='meta-lbl'>ACT EPS: </span>-"
+
+
+                # Margin Mathematics
+                margin_0, margin_1 = None, None
                 try: 
                     qf_df = stock.quarterly_financials
-                    if not qf_df.empty:
-                        if 'Total Revenue' in qf_df.index: q_rev_val = qf_df.loc['Total Revenue'].iloc[0]
-                        
-                        # Hard QoQ margin Math dynamically extracted! 
-                        if 'Total Revenue' in qf_df.index and 'Net Income' in qf_df.index:
-                            rev_0, net_0 = qf_df.loc['Total Revenue'].iloc[0], qf_df.loc['Net Income'].iloc[0]
-                            if pd.notna(rev_0) and rev_0 != 0 and pd.notna(net_0): q_margin = (net_0 / rev_0) * 100
-                            
-                            if len(qf_df.columns) > 1:
-                                rev_1, net_1 = qf_df.loc['Total Revenue'].iloc[1], qf_df.loc['Net Income'].iloc[1]
-                                if pd.notna(rev_1) and rev_1 != 0 and pd.notna(net_1):
-                                    q_margin_qoq = q_margin - ((net_1 / rev_1) * 100) # Margin percentage shift (e.g. up +200 bps)
+                    if not qf_df.empty and 'Total Revenue' in qf_df.index and 'Net Income' in qf_df.index:
+                        rev_0, net_0 = qf_df.loc['Total Revenue'].iloc[0], qf_df.loc['Net Income'].iloc[0]
+                        if pd.notna(rev_0) and rev_0 != 0 and pd.notna(net_0): margin_0 = (net_0 / rev_0) * 100
+                        if len(qf_df.columns) > 1:
+                            rev_1, net_1 = qf_df.loc['Total Revenue'].iloc[1], qf_df.loc['Net Income'].iloc[1]
+                            if pd.notna(rev_1) and rev_1 != 0 and pd.notna(net_1): margin_1 = (net_1 / rev_1) * 100
                 except: pass
 
-                # Fallback to older records if sheet incomplete!
-                if q_margin is None and yf_info.get('profitMargins'): q_margin = yf_info.get('profitMargins') * 100
-                marg_str = f"<strong>{q_margin:.1f}%</strong>" if q_margin is not None else "-"
-                marg_qoq_str = f" <span class='{'up-move' if q_margin_qoq > 0 else 'dn-move'}' style='font-size:11.5px;'>( {q_margin_qoq:+.1f}% QoQ )</span>" if q_margin_qoq is not None else ""
+                if margin_0 is None and yf_info.get('profitMargins'): margin_0 = yf_info.get('profitMargins') * 100
+                marg_str = f"<strong>{margin_0:.1f}%</strong>" if margin_0 is not None else "-"
+                
+                marg_qoq_str = ""
+                if margin_0 is not None and margin_1 is not None:
+                    diff = margin_0 - margin_1
+                    trend_word = "Improved" if diff > 0 else "Declined"
+                    m_clr = "up-move" if diff > 0 else "dn-move"
+                    marg_qoq_str = f" <span class='{m_clr}' style='font-size:11.5px;'>( {trend_word} from {margin_1:.1f}% prior Q )</span>"
+                
                 marg_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>NET MRG: </span>{marg_str}{marg_qoq_str}</div>"
 
                 # Rev Str Formats
+                try: q_rev_val = format_large_currency(stock.quarterly_financials.loc['Total Revenue'].iloc[0]) if not stock.quarterly_financials.empty else None
+                except: q_rev_val = None
                 yoy, qoq = (metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100), (metrics.get('revenueGrowthQuarterlyYoy') or yf_info.get('quarterlyRevenueGrowth', 0)*100)
+                
                 yoy_qoq_s = f"(Y: <span style='color:#333;font-weight:700'>{f'{yoy:+.1f}%' if yoy else '-'}</span> <span style='color:grey; font-weight:100;'>|</span> Q: <span style='color:#333;font-weight:700'>{f'{qoq:+.1f}%' if qoq else '-'}</span>)"
-                rev_str = f"<strong>{currency_sym}{format_large_currency(q_rev_val)}</strong>" if q_rev_val else "-"
-                rev_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>REV (Q): </span>{rev_str} <span style='font-size:11.5px;color:#7f8c8d;font-weight:600;'>{yoy_qoq_s}</span></div>"
+                rev_str = f"<strong>{currency_sym}{q_rev_val}</strong>" if q_rev_val else "-"
+                rev_box = f"<div style='margin-top:3px; margin-bottom:2px;'><span class='meta-lbl'>REV (Q): </span>{rev_str} <span style='font-size:11.5px;color:#7f8c8d;font-weight:600;'>{yoy_qoq_s}</span></div>"
 
-                # Pulse Assembler 
+                # Join Pulse Box Strings Array Together
                 pulse_col = f"{eps_box}{rev_box}{marg_box}"
 
 
-                # Date Formatting! 
+                # Date Formatting
                 earn_ts = yf_info.get('earningsTimestamp') 
                 if earn_ts:
                     utc_dt = datetime.utcfromtimestamp(earn_ts)
@@ -215,14 +239,13 @@ if 'master_df' in st.session_state:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
         if row["Ticker"] not in unique_tickers_list: unique_tickers_list.append(row["Ticker"])
             
-    # REVISED HTML DEPLOYER FOR "DUAL FINANCE" MATRICES!
+    # HTML DEPLOYER FOR "DUAL FINANCE" MATRICES
     for category in unique_cats:
         st.markdown(f"<div class='cat-heading'>{category}</div>", unsafe_allow_html=True)
         cat_df = mdf[mdf['Category'] == category]
         
         table_html = "<table class='custom-table'>"
-        # Added Width-Rules ensuring margins, PE arrays, etc remain mathematically balanced onscreen. 
-        table_html += "<tr><th style='width: 7%'>Asset</th><th style='width: 12%'>Mkt Cap & Pricing</th><th style='width: 15%'>Valuations Engine</th><th style='width: 18%'>The Quarterly Pulse (YoY/QoQ)</th><th style='width: 10%'>Events</th><th style='width: 13%'>Crowd Trackers</th><th>🧠 Generative Sector Logic</th></tr>"
+        table_html += "<tr><th style='width: 7%'>Asset</th><th style='width: 12%'>Mkt Cap & Pricing</th><th style='width: 15%'>Valuations Engine</th><th style='width: 22%'>The Quarterly Pulse (YoY/QoQ)</th><th style='width: 9%'>Events</th><th style='width: 11%'>Crowd Trackers</th><th>🧠 Generative Sector Logic</th></tr>"
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
@@ -246,7 +269,6 @@ if 'master_df' in st.session_state:
         st.caption(f"Charting real-world algorithmic internet data-interest shifts relative to trailing baseline levels ({trends_target_group})")
         pytrends = TrendReq(hl='en-US', tz=360, timeout=10)
         
-        # TIMEFRAME FIX SECURED ('today 12-m' directly extracts pure 365D views from cloud servers).
         pytrends.build_payload(kw_list=trends_target_group, cat=0, timeframe='today 12-m')
         
         trend_df = pytrends.interest_over_time()
