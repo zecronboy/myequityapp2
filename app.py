@@ -15,7 +15,7 @@ def format_data(value, prefix="", suffix="", decimals=2):
 st.title("🌎 Global Equities Research Dashboard")
 st.write("Welcome to your personal stock screener!")
 
-# --- UI CONTROL PANEL ---
+# --- UI CONTROL PANEL (UPDATED DURATIONS) ---
 ui_col1, ui_col2 = st.columns(2)
 
 with ui_col1:
@@ -23,10 +23,10 @@ with ui_col1:
     
 with ui_col2:
     timeframe_choice = st.selectbox("Select Chart Timeframe:", [
-        "Intraday (Hourly intervals, past 30 Days)", 
-        "Daily (1d intervals, past 1 Year)", 
+        "Intraday (Hourly intervals, past 2 Years Max)", # Updated description
+        "Daily (1d intervals, past 5 Years)",          # Upgraded to 5y
         "Weekly (1wk intervals, past 5 Years)"
-    ])
+    ], index=1) # The default selection is now "Daily (5y)" when the app loads!
 
 if st.button("Search Stock"):
     with st.spinner(f'Engaging engines for {ticker_symbol}...'):
@@ -138,17 +138,17 @@ if st.button("Search Stock"):
         st.write("---")
         st.subheader(f"🕯️ Interactive Candlestick Chart")
         
-        # Convert UI selection to technical variables
+        # UI Selection Variables applied to 5-Year demands!
         if "Intraday" in timeframe_choice:
-            c_period = "30d"
+            c_period = "730d"  # Upgraded to absolute maximum for intraday
             c_interval = "1h"
             ma_window = 20
         elif "Daily" in timeframe_choice:
-            c_period = "1y"
+            c_period = "5y"    # Upgraded from 1y to 5y
             c_interval = "1d"
             ma_window = 50 
         else:
-            c_period = "5y"
+            c_period = "5y"    # Upgraded from max to standardized 5y weekly
             c_interval = "1wk"
             ma_window = 50
             
@@ -160,17 +160,15 @@ if st.button("Search Stock"):
                 # Math formula to create a Rolling Moving Average Line 
                 history_data['SMA'] = history_data['Close'].rolling(window=ma_window).mean()
                 
-                # --- PRO FIX #1: REMOVING WEEKEND GAPS ---
-                # Convert timestamps to exact string labels so they stack flush with no empty dates!
+                # Plotly Categorical Data Clean Up (Hides Weekends)
                 if c_interval == '1h':
                     clean_dates = history_data.index.strftime('%b %d, %H:%M')
                 else:
                     clean_dates = history_data.index.strftime('%Y-%m-%d')
                 
-                # Assemble the Visuals
                 fig = go.Figure()
                 
-                # Candlesticks!
+                # Candlesticks
                 fig.add_trace(go.Candlestick(
                     x=clean_dates,
                     open=history_data['Open'],
@@ -178,11 +176,11 @@ if st.button("Search Stock"):
                     low=history_data['Low'],
                     close=history_data['Close'],
                     name='Market Price',
-                    increasing_line_color='#26a69a', # Tradingview green
-                    decreasing_line_color='#ef5350'  # Tradingview red
+                    increasing_line_color='#26a69a', 
+                    decreasing_line_color='#ef5350'  
                 ))
                 
-                # Orange Simple Moving Average line overlaid!
+                # Overlay Simple Moving Average 
                 fig.add_trace(go.Scatter(
                     x=clean_dates,
                     y=history_data['SMA'],
@@ -192,8 +190,9 @@ if st.button("Search Stock"):
                     hoverinfo='skip'
                 ))
                 
-                # Formatting limits and scaling rules 
+                # Plotly Layout upgrades
                 fig.update_layout(
+                    dragmode='pan', # <-- THE UPGRADE! THIS CHANGES LEFT-CLICK FROM ZOOM TO "GRAB & PULL" PAN!
                     xaxis_rangeslider_visible=False,
                     margin=dict(l=20, r=40, t=20, b=20),
                     height=600,
@@ -209,8 +208,7 @@ if st.button("Search Stock"):
                     plot_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                # --- PRO FIX #2: ENABLING TRADINGVIEW SCROLL ZOOM ---
-                # Add 'scrollZoom': True so the mouse wheel scales the candles perfectly
+                # Applying configs to Web Engine
                 st.plotly_chart(
                     fig, 
                     use_container_width=True, 
@@ -221,7 +219,7 @@ if st.button("Search Stock"):
                     }
                 )
             else:
-                st.warning("Could not gather history chart data for this specific time frame.")
+                st.warning(f"No history chart data available for this timeframe (Try selecting a shorter period).")
                 
         except Exception as e:
             st.error(f"Chart Render Error: {e}")
