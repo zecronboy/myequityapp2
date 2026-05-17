@@ -6,54 +6,54 @@ st.set_page_config(page_title="My Equities App", layout="centered")
 st.title("📈 Equities Research Dashboard")
 st.write("Welcome to your personal stock screener!")
 
-ticker_symbol = st.text_input("Enter a Stock Ticker:", "MSFT").upper()
+ticker_symbol = st.text_input("Enter a Stock Ticker:", "AAPL").upper()
 
 if st.button("Search Stock"):
     with st.spinner(f'Fetching real-time data for {ticker_symbol}...'):
         
-        # 1. We reach securely into your Streamlit vault for your FMP API Key!
         API_KEY = st.secrets["FMP_KEY"]
         
-        # 2. Go knock on FMP's door (Direct API Pipeline)
-        # Getting Price and Volume...
-        profile_url = f"https://financialmodelingprep.com/api/v3/profile/{ticker_symbol}?apikey={API_KEY}"
-        # Getting PE Ratio, EPS, PB Ratio...
-        metrics_url = f"https://financialmodelingprep.com/api/v3/key-metrics-ttm/{ticker_symbol}?apikey={API_KEY}"
-
-        # Fetch JSON safely 
+        # 2. Knock on FMP's door using the most reliable 'Quote' pipeline!
+        quote_url = f"https://financialmodelingprep.com/api/v3/quote/{ticker_symbol}?apikey={API_KEY}"
+        
         try:
-            profile_data = requests.get(profile_url).json()
-            metrics_data = requests.get(metrics_url).json()
+            # 3. Pull the data out of the URL 
+            raw_data = requests.get(quote_url).json()
 
-            if profile_data and metrics_data:
-                # Pluck out the fundamental gems!
-                price = profile_data[0].get('price', 'N/A')
-                volume = profile_data[0].get('volAvg', 'N/A')
+            # --- BULLETPROOFING THE ERROR ---
+            # If FMP sends us a blocked message instead of stock data, let's display what it says!
+            if type(raw_data) is dict and "Error Message" in raw_data:
+                st.error(f"FMP API BLOCK MESSAGE: {raw_data['Error Message']}")
+                st.info("Check your API Key in the settings to ensure it matches your real key, or verify your email.")
+            
+            # --- IF IT SUCCEEDS! ---
+            elif len(raw_data) > 0:
+                item = raw_data[0] # Grab the very first result safely 
                 
-                trailing_pe = metrics_data[0].get('peRatioTTM', 'N/A')
-                pb_ratio = metrics_data[0].get('pbRatioTTM', 'N/A')
-                eps = metrics_data[0].get('netIncomePerShareTTM', 'N/A')
+                # Pluck out the fundamental gems!
+                price = item.get('price', 'N/A')
+                volume = item.get('volume', 'N/A')
+                pe_ratio = item.get('pe', 'N/A')
+                eps = item.get('eps', 'N/A')
                 
                 st.subheader(f"Fundamental Data for {ticker_symbol}")
                 
                 # Setup Dashboard View
-                col1, col2, col3, col4, col5 = st.columns(5)
+                col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
                     st.metric(label="Current Price", value=f"${price}")
                 with col2:
                     st.metric(label="Avg Volume", value=f"{int(volume):,}" if type(volume) in [int, float] else volume)
                 with col3:
-                    st.metric(label="Trailing P/E", value=round(trailing_pe, 2) if type(trailing_pe) in [int, float] else trailing_pe)
+                    st.metric(label="P/E Ratio", value=round(pe_ratio, 2) if type(pe_ratio) in [int, float] and pe_ratio is not None else "N/A")
                 with col4:
-                    st.metric(label="P/B Ratio", value=round(pb_ratio, 2) if type(pb_ratio) in [int, float] else pb_ratio)
-                with col5:
-                    st.metric(label="Trailing EPS", value=f"${round(eps, 2)}" if type(eps) in [int, float] else eps)
+                    st.metric(label="EPS", value=f"${round(eps, 2)}" if type(eps) in [int, float] and eps is not None else "N/A")
 
                 st.write("---")
-                st.success("✅ Dashboard successfully upgraded from scrapers to Official Data API pipelines.")
+                st.success("✅ SUCCESS! Connected to FMP via a real Data API.")
             else:
-                st.error("No data found! Double-check the ticker symbol.")
+                st.warning("No data found! Double-check the ticker symbol.")
                 
         except Exception as e:
-            st.error(f"Something broke communicating with our Data pipeline: {e}")
+            st.error(f"App broken: {e}")
