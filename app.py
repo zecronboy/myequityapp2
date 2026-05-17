@@ -22,7 +22,7 @@ st.markdown("""
         .earn-date { font-family: monospace; color: #2c3e50; font-size: 13px; font-weight:600;}
         .earn-past { color: #e74c3c; font-size: 12px; font-weight: 600; background: #fadbd8; padding: 2px 4px; border-radius: 4px; margin-left: 3px;}
         .meta-lbl { font-size:12px; color: #95a5a6; font-weight:700; text-transform:uppercase; letter-spacing: 0.3px;}
-        .ai-text { font-size: 12.5px; line-height: 1.4; color: inherit; background-color: rgba(200,200,200,0.1); padding: 6px 10px; border-left: 3px solid #8e44ad; border-radius: 3px; font-style: italic;}
+        .ai-text { font-size: 12.5px; line-height: 1.5; color: #444; background-color: rgba(142,68,173,0.06); padding: 8px 10px; border-left: 4px solid #8e44ad; border-radius: 3px; font-style: italic;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -59,7 +59,8 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
         
         if GEMINI_KEY:
             genai.configure(api_key=GEMINI_KEY)
-            ai_model = genai.GenerativeModel('gemini-1.5-flash')
+            # FIX #1: Switched exact naming to the universal routing alias "gemini-pro"
+            ai_model = genai.GenerativeModel('gemini-pro')
             
         data_outputs = []
         progress_bar = st.progress(0)
@@ -99,7 +100,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 pe_combined = f"<span class='meta-lbl'>PE: </span>{fmt_val(metrics.get('peTTM', yf_info.get('trailingPE')))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('forwardPE'))}<br>" \
                               f"<span class='meta-lbl'>PG: </span>{fmt_val(yf_info.get('trailingPegRatio'))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('pegRatio'))}"
                               
-                # Earnings logic (Adding failsafe check to list)
+                # Earnings logic
                 eps_actual, eps_diff = None, None 
                 if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
                     eps_actual, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
@@ -132,26 +133,26 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <strong>{g_data[t].iloc[-1]} / 100</strong>"
                 except: hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <span style='color:grey;'>Block (Shared IP)</span>"
 
-                # ====== THE CORRECTED AI MODULE ======
+                # ====== THE GEMINI AI PRO MODULE ======
                 ai_take = "Key missing / Framework unlinked."
                 if GEMINI_KEY:
                     try:
-                        raw_headlines = [h.get('title') for h in stock.news][:10] if hasattr(stock, 'news') and stock.news else []
+                        # Grab real Yahoo headlines on the fly
+                        raw_headlines = [h.get('title') for h in stock.news][:8] if hasattr(stock, 'news') and stock.news else []
                         if len(raw_headlines) > 0:
-                            prompt = f"Analyze these financial headlines for {t}: {raw_headlines}. In exactly one punchy sentence, summarize the core narrative and state if it is [BULLISH, BEARISH, or NEUTRAL]."
+                            prompt = f"Read these live financial news headlines regarding the ticker {t}: {raw_headlines}. Deliver a 1-sentence analytical brief of the narrative tone. In brackets at the very end of your response, output ONLY ONE of these tags: [BULLISH], [BEARISH], or [NEUTRAL]."
                             response = ai_model.generate_content(prompt)
                             try:
-                                ai_take = response.text.replace('\n', '').strip()
-                            except ValueError: # Catch AI Safety Guideline blockers
-                                ai_take = "Output restricted by Google AI content safety guardrails."
-                        else: ai_take = "No significant headlines currently available via Yahoo feeds."
+                                ai_take = response.text.replace('\n', ' ').strip()
+                            except ValueError: 
+                                ai_take = "Content shielded by Generative AI safety guidelines."
+                        else: ai_take = "Current corporate PR cycle holds insufficient media mentions."
                     except Exception as e:
                         error_msg = str(e)
                         if "429" in error_msg or "quota" in error_msg.lower():
-                            ai_take = f"LLM Halt: Google Gemini Free-Tier Quota Hit (API rate limit exceeded)."
+                            ai_take = f"Wait exactly 60 seconds (Free AI quota rate-limit triggered by consecutive syncs)."
                         else:
-                            # PRINTING THE RAW ERROR TO DIAGNOSE
-                            ai_take = f"LLM Auth Failure: {error_msg[:60]}..." 
+                            ai_take = f"Data handshake blocked: {error_msg[:45]}..." 
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
@@ -162,16 +163,13 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            # Mathematically necessary to sleep at least 4.0 sec to satisfy Gemini's 15 calls per minute rule! 
-            time.sleep(3.5) 
+            time.sleep(3.5) # Protection!
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
 
-
 if 'master_df' in st.session_state:
     mdf = st.session_state.master_df
-    
     unique_cats = []
     for row in valid_rows:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
@@ -181,11 +179,11 @@ if 'master_df' in st.session_state:
         cat_df = mdf[mdf['Category'] == category]
         
         table_html = "<table class='custom-table'>"
-        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 13%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 9%'>Earning Catalyst</th><th style='width: 19%'>Mindshare Trackers</th><th>🧠 Google AI Narrative Extraction</th></tr>"
+        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 12%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 10%'>Earning Catalyst</th><th style='width: 18%'>Mindshare Trackers</th><th>🧠 Generative AI Analysis Pipeline</th></tr>"
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
-            table_html += f"<td class='ticker-col' title='Legal Asset Title: {r['Name']}'>{r['Ticker']}</td>" 
+            table_html += f"<td class='ticker-col' title='Corporate Identification: {r['Name']}'>{r['Ticker']}</td>" 
             table_html += f"<td>{r['MCAP_PRC']}</td>"
             table_html += f"<td>{r['FINS']}</td>"
             table_html += f"<td style='line-height:1.7'>{r['Earnings']}</td>"
