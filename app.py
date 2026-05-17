@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import yfinance as yf
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Global Equities App", layout="wide")
 
@@ -14,7 +15,18 @@ def format_data(value, prefix="", suffix="", decimals=2):
 st.title("🌎 Global Equities Research Dashboard")
 st.write("Welcome to your personal stock screener!")
 
-ticker_symbol = st.text_input("Enter a Stock Ticker (e.g. AAPL or 3750.HK):", "AAPL").upper()
+# --- UI CONTROL PANEL (Now featuring 2 columns!) ---
+ui_col1, ui_col2 = st.columns(2)
+
+with ui_col1:
+    ticker_symbol = st.text_input("Enter a Stock Ticker (e.g. AAPL or 3750.HK):", "AAPL").upper()
+    
+with ui_col2:
+    timeframe_choice = st.selectbox("Select Chart Timeframe:", [
+        "Intraday (Hourly intervals, past 30 Days)", 
+        "Daily (1d intervals, past 1 Year)", 
+        "Weekly (1wk intervals, past 5 Years)"
+    ])
 
 if st.button("Search Stock"):
     with st.spinner(f'Engaging engines for {ticker_symbol}...'):
@@ -22,17 +34,14 @@ if st.button("Search Stock"):
         API_KEY = st.secrets["FINNHUB_KEY"]
         use_fallback = False
         
-        # --- ENGINE 1: FINNHUB (MAIN US MARKET ENGINE) ---
+        # --- ENGINE 1: FINNHUB ---
         quote_url = f"https://finnhub.io/api/v1/quote?symbol={ticker_symbol}&token={API_KEY}"
         
         try:
             quote_data = requests.get(quote_url).json()
-            
             if "error" in quote_data:
-                st.warning(f"Finnhub Blocked: '{quote_data['error']}'... Firing up Global Fallback 🚀")
                 use_fallback = True
             elif quote_data.get('c', 0) == 0:
-                st.warning("Empty US data. Firing up Global Fallback 🚀")
                 use_fallback = True
             else:
                 metric_url = f"https://finnhub.io/api/v1/stock/metric?symbol={ticker_symbol}&metric=all&token={API_KEY}"
@@ -41,6 +50,7 @@ if st.button("Search Stock"):
                 price = quote_data.get('c')  
                 change_num = quote_data.get('d') 
                 currency_symbol = "$" 
+                
                 trailing_pe = metrics.get('peTTM')
                 forward_pe = metrics.get('peNormalizedAnnual')
                 pb_ratio = metrics.get('pbAnnual')
@@ -50,47 +60,34 @@ if st.button("Search Stock"):
                 rev_growth = metrics.get('revenueGrowthTTMYoy')
                 roa = metrics.get('roaTTM')
                 roe = metrics.get('roeTTM')
-
         except Exception as e:
             use_fallback = True
             
-        # --- ENGINE 2: YFINANCE GLOBAL (THE NATIVE NINJA) ---
+        # --- ENGINE 2: YFINANCE GLOBAL NINJA ---
         if use_fallback:
             try:
-                # 1. No custom sessions. YF + curl_cffi bypasses the server block!
                 stock = yf.Ticker(ticker_symbol)
                 info = {}
-                
                 try: 
-                    # Asking for deep fundamental metrics...
                     info = stock.info 
                 except Exception:
-                    # If Yahoo specifically restricts 'info' because of intense cloud scraping...
-                    st.warning("Yahoo Finance protected its core fundamental databases... Pulling raw market tape instead!")
+                    pass
                 
                 price = info.get('currentPrice') or info.get('regularMarketPrice')
                 
-                # --- 🚨 ULTIMATE RECOVERY 🚨 ---
-                # If they completely block "fundamentals", we stealthily bypass it by scraping the stock chart prices!
                 if price is None:
-                    hist = stock.history(period="5d") # Go grab chart candles
+                    hist = stock.history(period="5d")
                     if not hist.empty:
                         price = float(hist['Close'].iloc[-1])
                         previous_close = float(hist['Close'].iloc[-2]) if len(hist) > 1 else price
                         change_num = price - previous_close
-                    else:
-                        st.error("Complete Failure: Ensure the Ticker is correctly formatted for Yahoo (e.g., '3750.HK').")
-
                 else: 
-                    # We got deep info successfully!
                     previous_close = info.get('previousClose')
                     change_num = (price - previous_close) if previous_close else None
 
-                # Fetch formatting 
                 currency_raw = info.get('currency', 'USD') if info else 'USD'
                 currency_symbol = "HK$" if currency_raw == "HKD" else (currency_raw + " " if currency_raw != "USD" else "$")
 
-                # The N/A format_data catches any of this if they fall empty
                 trailing_pe = info.get('trailingPE')
                 forward_pe = info.get('forwardPE')
                 pb_ratio = info.get('priceToBook')
@@ -102,24 +99,22 @@ if st.button("Search Stock"):
                 roe = (info.get('returnOnEquity') * 100) if info.get('returnOnEquity') else None
                     
             except Exception as e:
-                st.error(f"Global Fallback blocked: {e}")
                 price = None 
 
 
-        # --- DASHBOARD PAINTING (Works the same for either engine!) ---
+        # --- DASHBOARD PAINTING ---
         if 'price' in locals() and price is not None:
-            engine_used = "YF Global (Stealth/Tape Data)" if use_fallback else "Finnhub Main Pipelines"
+            engine_used = "Yahoo Global Pipeline" if use_fallback else "Finnhub Pro Pipeline"
             
             st.subheader(f"{ticker_symbol}")
             st.metric(label="Current Price", 
                       value=format_data(price, prefix=currency_symbol), 
                       delta=format_data(change_num, prefix=currency_symbol))
-            st.caption(f"✅ Route Success: **{engine_used}**")
+            st.caption(f"✅ Route Success: {engine_used}")
             st.divider() 
             
             st.subheader("📊 Fundamental Master List")
             col1, col2, col3, col4 = st.columns(4)
-            
             with col1:
                 st.markdown("**Valuations**")
                 st.metric(label="Trailing P/E", value=format_data(trailing_pe))
@@ -139,44 +134,72 @@ if st.button("Search Stock"):
                 st.metric(label="ROE", value=format_data(roe, suffix="%"))
 
 
-# --- NEW CHARTING UPGRADE ---
+        # --- 📈 ADVANCED TRADINGVIEW CHARTING 📈 ---
         st.write("---")
-        st.subheader(f"📊 {ticker_symbol} Price History (6 Months)")
+        st.subheader(f"🕯️ Interactive Candlestick Chart")
         
+        # Convert UI selection to technical variables
+        if "Intraday" in timeframe_choice:
+            c_period = "30d"
+            c_interval = "1h"
+            ma_window = 20
+        elif "Daily" in timeframe_choice:
+            c_period = "1y"
+            c_interval = "1d"
+            ma_window = 50 
+        else:
+            c_period = "5y"
+            c_interval = "1wk"
+            ma_window = 50
+            
         try:
-            # We use our yfinance ninja to download the last 6 months of daily data!
             chart_stock = yf.Ticker(ticker_symbol)
-            history_data = chart_stock.history(period="6mo")
+            history_data = chart_stock.history(period=c_period, interval=c_interval)
             
             if not history_data.empty:
-                import plotly.graph_objects as go
+                # Math formula to create a Rolling Moving Average Line 
+                history_data['SMA'] = history_data['Close'].rolling(window=ma_window).mean()
                 
-                # Create a beautiful Plotly line chart
+                # Assemble the Visuals
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=history_data.index, 
-                    y=history_data['Close'],
-                    mode='lines',
-                    name='Closing Price',
-                    line=dict(color='#0078D7', width=2),
-                    fill='tozeroy',  # Adds a nice subtle shading under the line
-                    fillcolor='rgba(0, 120, 215, 0.1)' 
+                
+                # Candlesticks!
+                fig.add_trace(go.Candlestick(
+                    x=history_data.index,
+                    open=history_data['Open'],
+                    high=history_data['High'],
+                    low=history_data['Low'],
+                    close=history_data['Close'],
+                    name='Market Price',
+                    increasing_line_color='#26a69a', # Tradingview green
+                    decreasing_line_color='#ef5350'  # Tradingview red
                 ))
                 
-                # Make it look sleek and professional
+                # Orange Simple Moving Average line overlaid!
+                fig.add_trace(go.Scatter(
+                    x=history_data.index,
+                    y=history_data['SMA'],
+                    mode='lines',
+                    line=dict(color='orange', width=2),
+                    name=f'{ma_window} SMA'
+                ))
+                
+                # Making it Interactive and professional looking 
                 fig.update_layout(
+                    xaxis_rangeslider_visible=False, # We remove the default ugly sub-slider
                     margin=dict(l=20, r=20, t=20, b=20),
-                    height=400,
+                    height=550,
+                    hovermode="x unified", # Triggers one clean crosshair box when hovering!
+                    yaxis=dict(showgrid=True, gridcolor='rgba(211,211,211, 0.4)'),
+                    xaxis=dict(showgrid=True, gridcolor='rgba(211,211,211, 0.4)'),
                     paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(showgrid=False),
-                    yaxis=dict(showgrid=True, gridcolor='lightgray', tickprefix=currency_symbol if 'currency_symbol' in locals() else "$")
+                    plot_bgcolor='rgba(0,0,0,0)'
                 )
                 
-                # Send the chart to the Streamlit Website
+                # Draw the chart to Streamlit!
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.warning("Chart data not available for this ticker.")
+                st.warning("Could not gather history chart data for this specific time frame.")
                 
         except Exception as e:
-            st.error(f"Could not load chart: {e}")
+            st.error(f"Chart Render Error: {e}")
