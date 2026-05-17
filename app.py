@@ -11,49 +11,51 @@ ticker_symbol = st.text_input("Enter a Stock Ticker:", "AAPL").upper()
 if st.button("Search Stock"):
     with st.spinner(f'Fetching real-time data for {ticker_symbol}...'):
         
-        API_KEY = st.secrets["FMP_KEY"]
+        API_KEY = st.secrets["FINNHUB_KEY"]
         
-        # 2. Knock on FMP's door using the most reliable 'Quote' pipeline!
-        quote_url = f"https://financialmodelingprep.com/api/v3/quote/{ticker_symbol}?apikey={API_KEY}"
+        # 1. New pipelines! Asking Finnhub for the Quote (price) and Metric (PE, EPS)
+        quote_url = f"https://finnhub.io/api/v1/quote?symbol={ticker_symbol}&token={API_KEY}"
+        metric_url = f"https://finnhub.io/api/v1/stock/metric?symbol={ticker_symbol}&metric=all&token={API_KEY}"
         
         try:
-            # 3. Pull the data out of the URL 
-            raw_data = requests.get(quote_url).json()
+            quote_data = requests.get(quote_url).json()
+            metric_data = requests.get(metric_url).json()
 
-            # --- BULLETPROOFING THE ERROR ---
-            # If FMP sends us a blocked message instead of stock data, let's display what it says!
-            if type(raw_data) is dict and "Error Message" in raw_data:
-                st.error(f"FMP API BLOCK MESSAGE: {raw_data['Error Message']}")
-                st.info("Check your API Key in the settings to ensure it matches your real key, or verify your email.")
+            # --- BULLETPROOFING FOR FINNHUB ---
+            if "error" in quote_data:
+                st.error(f"Finnhub API Block Message: {quote_data['error']}")
             
-            # --- IF IT SUCCEEDS! ---
-            elif len(raw_data) > 0:
-                item = raw_data[0] # Grab the very first result safely 
+            # The key 'c' stands for 'Current Price' in Finnhub
+            elif 'c' in quote_data and quote_data['c'] > 0:
                 
-                # Pluck out the fundamental gems!
-                price = item.get('price', 'N/A')
-                volume = item.get('volume', 'N/A')
-                pe_ratio = item.get('pe', 'N/A')
-                eps = item.get('eps', 'N/A')
+                # Prices and Change for the day
+                price = quote_data['c']  
+                change_num = quote_data['d'] # 'd' is the actual dollar change today
                 
+                # Grabbing the fundamental metrics
+                metrics = metric_data.get('metric', {})
+                trailing_pe = metrics.get('peTTM', 'N/A')
+                pb_ratio = metrics.get('pbAnnual', 'N/A') 
+                eps = metrics.get('epsTTM', 'N/A')
+
                 st.subheader(f"Fundamental Data for {ticker_symbol}")
                 
-                # Setup Dashboard View
+                # Creating 4 equal column spaces!
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.metric(label="Current Price", value=f"${price}")
+                    st.metric(label="Current Price", value=f"${price}", delta=f"${change_num}")
                 with col2:
-                    st.metric(label="Avg Volume", value=f"{int(volume):,}" if type(volume) in [int, float] else volume)
+                    st.metric(label="Trailing P/E", value=round(trailing_pe, 2) if type(trailing_pe) in [int, float] else trailing_pe)
                 with col3:
-                    st.metric(label="P/E Ratio", value=round(pe_ratio, 2) if type(pe_ratio) in [int, float] and pe_ratio is not None else "N/A")
+                    st.metric(label="P/B Ratio", value=round(pb_ratio, 2) if type(pb_ratio) in [int, float] else pb_ratio)
                 with col4:
-                    st.metric(label="EPS", value=f"${round(eps, 2)}" if type(eps) in [int, float] and eps is not None else "N/A")
+                    st.metric(label="EPS (TTM)", value=f"${round(eps, 2)}" if type(eps) in [int, float] else eps)
 
                 st.write("---")
-                st.success("✅ SUCCESS! Connected to FMP via a real Data API.")
+                st.success("✅ SUCCESS! Connected to a bulletproof Free API that doesn't hold you hostage.")
             else:
-                st.warning("No data found! Double-check the ticker symbol.")
+                st.warning("No data found! Are you sure you spelled the Ticker symbol correctly?")
                 
         except Exception as e:
             st.error(f"App broken: {e}")
