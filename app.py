@@ -42,7 +42,7 @@ st.write("Track parameters, query AI logic algorithms, and index mass mindshare 
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Artificial Intelligence", "Artificial Intelligence", "Fintech Innovation", "Industrial Value", "Commodities / Def."], "Ticker": ["NVDA", "AAPL", "SQ", "GE", "XOM"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Artificial Intelligence", "Optical Communications", "Fintech Innovation", "Commodities / Def."], "Ticker": ["NVDA", "AAOI", "SQ", "XOM"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -52,29 +52,23 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading financial footprints & establishing auto-discovery parameters..."):
+    with st.spinner("Downloading financial footprints & establishing stable LLM cadence... (May take 30+ secs depending on book size)"):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
         
-        # --- THE GOOGLE A.I. AUTO-DISCOVERY ROUTINE ---
         ai_model = None
         if GEMINI_KEY:
             try:
                 genai.configure(api_key=GEMINI_KEY)
-                # Explicitly pull the Google allowed models for YOUR region and Key status
                 available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                
-                # Snatch the smartest free active brain we find in the whitelist 
                 chosen_model = 'gemini-1.5-flash'
                 for vm in available:
                     if 'gemini-1.5' in vm or 'gemini-flash' in vm or 'gemini-pro' in vm:
                         chosen_model = vm
                         break
-                        
                 ai_model = genai.GenerativeModel(chosen_model.replace("models/", ""))
-            except Exception as auth_fail:
-                pass # The API blocks handle missing routing internally.
+            except: pass
 
         data_outputs = []
         progress_bar = st.progress(0)
@@ -89,6 +83,8 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
 
         for idx, row in enumerate(valid_rows):
             cat, t = row["Category"], row["Ticker"]
+            ai_was_pinged = False # Tracking marker
+            
             try:
                 prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}").json() if API_KEY else {}
                 quote_data = requests.get(f"https://finnhub.io/api/v1/quote?symbol={t}&token={API_KEY}").json() if API_KEY else {}
@@ -117,7 +113,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
                     eps_actual, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
                 eps_box = f"<span class='meta-lbl'>EPS: </span>{f'${eps_actual:.2f}' if eps_actual else '-'}" + \
-                          (f" <span class='{'up-move' if eps_diff > 0 else 'dn-move'}' style='font-size:11px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
+                          (f" <span class='{'up-move' if eps_diff and eps_diff > 0 else 'dn-move'}' style='font-size:11px;'>( {eps_diff:+.1f}% )</span>" if eps_diff else "")
                 
                 try: 
                     q_rev = format_large_currency(stock.quarterly_financials.loc['Total Revenue'].iloc[0]) if not stock.quarterly_financials.empty else None
@@ -142,28 +138,31 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     pytrends.build_payload([t], cat=0, timeframe='now 7-d', geo='')
                     g_data = pytrends.interest_over_time()
                     hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <strong>{g_data[t].iloc[-1]} / 100</strong>"
-                except: hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <span style='color:grey;'>Block (Shared IP)</span>"
+                except: 
+                    # If this gets completely banned by google shared IP we gracefully hide the error text
+                    pass 
 
-                # ====== GENERATIVE INTELLIGENCE SAFE FALLBACK ======
-                ai_take = "Key missing / Pipeline unlinked."
-                if GEMINI_KEY:
-                    if ai_model is not None:
-                        try:
-                            raw_headlines = [h.get('title') for h in stock.news][:6] if hasattr(stock, 'news') and stock.news else []
-                            if len(raw_headlines) > 0:
-                                prompt = f"Analyze these live financial headlines for {t}: {raw_headlines}. In ONE very brief sentence, analyze the narrative. At the exact end, tag with [BULLISH], [BEARISH], or [NEUTRAL]."
-                                response = ai_model.generate_content(prompt)
-                                try:
-                                    ai_take = response.text.replace('\n', ' ').strip()
-                                except ValueError: 
-                                    ai_take = "Halted by Content AI Safeguard System."
-                            else: ai_take = "Quiet Public Pipeline (Insufficient daily news volume for inference)."
-                        except Exception as e:
-                            e_txt = str(e)
-                            if "429" in e_txt or "quota" in e_txt.lower(): ai_take = f"Sync Delay Hit: Re-running API quota thresholds (Too Fast)."
-                            else: ai_take = f"Node Failed: Verify correct project/regional alignment on Google Studio."
-                    else:
-                        ai_take = "Regional Key Warning: Key has either not propagated yet globally (Wait ~15 min), or Generative Access is blocked in the server region (UK/Canada Cloud)."
+                # ====== OPTIMIZED GEMINI AI MODULE ======
+                ai_take = ""
+                if GEMINI_KEY and ai_model is not None:
+                    try:
+                        raw_headlines = [h.get('title') for h in stock.news][:6] if hasattr(stock, 'news') and stock.news else []
+                        
+                        # SMART AI PREVENTER: Don't spend google quota requests on assets with ZERO news today!
+                        if len(raw_headlines) > 0:
+                            prompt = f"Analyze these live financial headlines for {t}: {raw_headlines}. In exactly one brief sentence, describe the narrative currently taking place. Then attach one space, and output exactly one tag wrapped in brackets based on the sentiment: [BULLISH], [BEARISH], or [NEUTRAL]."
+                            response = ai_model.generate_content(prompt)
+                            ai_was_pinged = True
+                            
+                            try: ai_take = response.text.replace('\n', ' ').strip()
+                            except ValueError: ai_take = "Halted by Google Cloud Safety guardrails."
+                        else: ai_take = f"Quiet cycle: 0 actionable corporate press releases filed for {t}."
+                        
+                    except Exception as e:
+                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by 15 req/min AI Ceiling (Slow down queries)."
+                        else: ai_take = "Data routing exception encountered."
+                else:
+                    ai_take = "Module requires Valid Gemini Studio configuration string."
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
@@ -174,8 +173,13 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            # Keeping Google Gemini stable over shared loops 
-            time.sleep(3.0) 
+            
+            # --- PERFECTING THE SPEED BUMPS ---
+            # To adhere STRICTLY to Gemini's hard 4.0 second per cycle rule without penalizing offline stocks
+            if ai_was_pinged:
+                time.sleep(4.2)
+            else:
+                time.sleep(0.5)
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
@@ -196,7 +200,7 @@ if 'master_df' in st.session_state:
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
-            table_html += f"<td class='ticker-col' title='Legal Asset Title: {r['Name']}'>{r['Ticker']}</td>" 
+            table_html += f"<td class='ticker-col' title='Corporate Entity Verification: {r['Name']}'>{r['Ticker']}</td>" 
             table_html += f"<td>{r['MCAP_PRC']}</td>"
             table_html += f"<td>{r['FINS']}</td>"
             table_html += f"<td style='line-height:1.7'>{r['Earnings']}</td>"
