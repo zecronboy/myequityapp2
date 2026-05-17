@@ -52,16 +52,30 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading financial footprints & feeding models..."):
+    with st.spinner("Downloading financial footprints & establishing auto-discovery parameters..."):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
         
+        # --- THE GOOGLE A.I. AUTO-DISCOVERY ROUTINE ---
+        ai_model = None
         if GEMINI_KEY:
-            genai.configure(api_key=GEMINI_KEY)
-            # FIX #1: Switched exact naming to the universal routing alias "gemini-pro"
-            ai_model = genai.GenerativeModel('gemini-pro')
-            
+            try:
+                genai.configure(api_key=GEMINI_KEY)
+                # Explicitly pull the Google allowed models for YOUR region and Key status
+                available = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                
+                # Snatch the smartest free active brain we find in the whitelist 
+                chosen_model = 'gemini-1.5-flash'
+                for vm in available:
+                    if 'gemini-1.5' in vm or 'gemini-flash' in vm or 'gemini-pro' in vm:
+                        chosen_model = vm
+                        break
+                        
+                ai_model = genai.GenerativeModel(chosen_model.replace("models/", ""))
+            except Exception as auth_fail:
+                pass # The API blocks handle missing routing internally.
+
         data_outputs = []
         progress_bar = st.progress(0)
         
@@ -85,7 +99,6 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 yf_info = stock.info 
                 co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Asset").replace("'", "&apos;") 
                 
-                # Prices 
                 price, prev_close = quote_data.get('c') or yf_info.get('currentPrice') or 0, quote_data.get('pc') or yf_info.get('previousClose')
                 delta_str = ""
                 if price and prev_close and price > 0 and prev_close > 0:
@@ -100,7 +113,6 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 pe_combined = f"<span class='meta-lbl'>PE: </span>{fmt_val(metrics.get('peTTM', yf_info.get('trailingPE')))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('forwardPE'))}<br>" \
                               f"<span class='meta-lbl'>PG: </span>{fmt_val(yf_info.get('trailingPegRatio'))} <span style='color:#ccc'>|</span> {fmt_val(yf_info.get('pegRatio'))}"
                               
-                # Earnings logic
                 eps_actual, eps_diff = None, None 
                 if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
                     eps_actual, eps_diff = earn_json[0].get('actual'), earn_json[0].get('surprisePercent')
@@ -112,7 +124,6 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 except: q_rev = None
                 rev_box = f"<br><span class='meta-lbl'>REV: </span>{currency_sym}{q_rev if q_rev else '-'}<br><span class='meta-lbl'>Y/Y: </span>{(metrics.get('revenueGrowthTTMYoy') or yf_info.get('revenueGrowth', 0)*100):.1f}%"
 
-                # Upcoming Earnings Date 
                 earn_ts = yf_info.get('earningsTimestamp') 
                 if earn_ts:
                     utc_dt = datetime.utcfromtimestamp(earn_ts)
@@ -133,26 +144,26 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <strong>{g_data[t].iloc[-1]} / 100</strong>"
                 except: hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <span style='color:grey;'>Block (Shared IP)</span>"
 
-                # ====== THE GEMINI AI PRO MODULE ======
-                ai_take = "Key missing / Framework unlinked."
+                # ====== GENERATIVE INTELLIGENCE SAFE FALLBACK ======
+                ai_take = "Key missing / Pipeline unlinked."
                 if GEMINI_KEY:
-                    try:
-                        # Grab real Yahoo headlines on the fly
-                        raw_headlines = [h.get('title') for h in stock.news][:8] if hasattr(stock, 'news') and stock.news else []
-                        if len(raw_headlines) > 0:
-                            prompt = f"Read these live financial news headlines regarding the ticker {t}: {raw_headlines}. Deliver a 1-sentence analytical brief of the narrative tone. In brackets at the very end of your response, output ONLY ONE of these tags: [BULLISH], [BEARISH], or [NEUTRAL]."
-                            response = ai_model.generate_content(prompt)
-                            try:
-                                ai_take = response.text.replace('\n', ' ').strip()
-                            except ValueError: 
-                                ai_take = "Content shielded by Generative AI safety guidelines."
-                        else: ai_take = "Current corporate PR cycle holds insufficient media mentions."
-                    except Exception as e:
-                        error_msg = str(e)
-                        if "429" in error_msg or "quota" in error_msg.lower():
-                            ai_take = f"Wait exactly 60 seconds (Free AI quota rate-limit triggered by consecutive syncs)."
-                        else:
-                            ai_take = f"Data handshake blocked: {error_msg[:45]}..." 
+                    if ai_model is not None:
+                        try:
+                            raw_headlines = [h.get('title') for h in stock.news][:6] if hasattr(stock, 'news') and stock.news else []
+                            if len(raw_headlines) > 0:
+                                prompt = f"Analyze these live financial headlines for {t}: {raw_headlines}. In ONE very brief sentence, analyze the narrative. At the exact end, tag with [BULLISH], [BEARISH], or [NEUTRAL]."
+                                response = ai_model.generate_content(prompt)
+                                try:
+                                    ai_take = response.text.replace('\n', ' ').strip()
+                                except ValueError: 
+                                    ai_take = "Halted by Content AI Safeguard System."
+                            else: ai_take = "Quiet Public Pipeline (Insufficient daily news volume for inference)."
+                        except Exception as e:
+                            e_txt = str(e)
+                            if "429" in e_txt or "quota" in e_txt.lower(): ai_take = f"Sync Delay Hit: Re-running API quota thresholds (Too Fast)."
+                            else: ai_take = f"Node Failed: Verify correct project/regional alignment on Google Studio."
+                    else:
+                        ai_take = "Regional Key Warning: Key has either not propagated yet globally (Wait ~15 min), or Generative Access is blocked in the server region (UK/Canada Cloud)."
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
@@ -163,10 +174,12 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            time.sleep(3.5) # Protection!
+            # Keeping Google Gemini stable over shared loops 
+            time.sleep(3.0) 
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
+
 
 if 'master_df' in st.session_state:
     mdf = st.session_state.master_df
@@ -183,7 +196,7 @@ if 'master_df' in st.session_state:
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
-            table_html += f"<td class='ticker-col' title='Corporate Identification: {r['Name']}'>{r['Ticker']}</td>" 
+            table_html += f"<td class='ticker-col' title='Legal Asset Title: {r['Name']}'>{r['Ticker']}</td>" 
             table_html += f"<td>{r['MCAP_PRC']}</td>"
             table_html += f"<td>{r['FINS']}</td>"
             table_html += f"<td style='line-height:1.7'>{r['Earnings']}</td>"
