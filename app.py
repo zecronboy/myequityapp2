@@ -2,10 +2,8 @@ import streamlit as st
 import requests
 import yfinance as yf
 
-# Wide terminal mode
 st.set_page_config(page_title="My Equities App", layout="wide")
 
-# Formatter to make messy numbers pretty (now with dynamic currencies)
 def format_data(value, prefix="", suffix="", decimals=2):
     if value is None or value == "N/A" or value == "" or str(value).lower() == "nan":
         return "N/A"
@@ -22,7 +20,7 @@ if st.button("Search Stock"):
     with st.spinner(f'Engaging engines for {ticker_symbol}...'):
         
         API_KEY = st.secrets["FINNHUB_KEY"]
-        use_fallback = False # By default, we use Finnhub
+        use_fallback = False
         
         # --- ENGINE 1: FINNHUB (MAIN) ---
         quote_url = f"https://finnhub.io/api/v1/quote?symbol={ticker_symbol}&token={API_KEY}"
@@ -30,26 +28,22 @@ if st.button("Search Stock"):
         try:
             quote_data = requests.get(quote_url).json()
             
-            # IF FINNHUB BLOCKS IT (International)
             if "error" in quote_data:
-                st.warning(f"Finnhub Blocked: '{quote_data['error']}'... Switching to Hybrid Fallback (Yahoo Finance) 🚀")
+                st.warning(f"Finnhub Blocked: '{quote_data['error']}'... Switching to Hybrid Fallback 🚀")
                 use_fallback = True
-            
-            # IF FINNHUB GIVES US EMPTY DATA (Non-existent US stock)
+                
             elif quote_data.get('c', 0) == 0:
                 st.warning("Empty data. Searching Global Fallback Engine... 🚀")
                 use_fallback = True
                 
-            # IF FINNHUB SUCCEEDS!
             else:
                 metric_url = f"https://finnhub.io/api/v1/stock/metric?symbol={ticker_symbol}&metric=all&token={API_KEY}"
                 metric_data = requests.get(metric_url).json()
                 
-                # Digging deep into Finnhub's dictionary 
                 metrics = metric_data.get('metric', {})
                 price = quote_data.get('c')  
                 change_num = quote_data.get('d') 
-                currency_symbol = "$" # Finnhub limits default to US markets
+                currency_symbol = "$" 
                 
                 trailing_pe = metrics.get('peTTM')
                 forward_pe = metrics.get('peNormalizedAnnual')
@@ -65,13 +59,20 @@ if st.button("Search Stock"):
             st.error("Engine 1 failed completely.")
             use_fallback = True
             
-        # --- ENGINE 2: YFINANCE (HYBRID FALLBACK) ---
+        # --- ENGINE 2: YFINANCE (THE HUMAN DISGUISE) ---
         if use_fallback:
             try:
-                stock = yf.Ticker(ticker_symbol)
+                # 1. Open a Custom Web Session
+                session = requests.Session()
+                # 2. Tell Yahoo we are an ordinary Windows user running Google Chrome 🥸
+                session.headers.update(
+                    {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'}
+                )
+                
+                # 3. Ask for the data using our disguise
+                stock = yf.Ticker(ticker_symbol, session=session)
                 info = stock.info
                 
-                # Ensure the data actually exists
                 price = info.get('currentPrice') or info.get('regularMarketPrice')
                 
                 if price is None:
@@ -80,16 +81,15 @@ if st.button("Search Stock"):
                     previous_close = info.get('previousClose')
                     change_num = (price - previous_close) if previous_close else None
                     
-                    # Discover local currency for International Stocks (e.g. 'HKD' for Hong Kong)
                     currency_raw = info.get('currency', 'USD')
-                    currency_symbol = currency_raw + " " if currency_raw != "USD" else "$"
+                    # Make Asian/Euro currencies display nicely!
+                    currency_symbol = "HK$" if currency_raw == "HKD" else (currency_raw + " " if currency_raw != "USD" else "$")
 
                     trailing_pe = info.get('trailingPE')
                     forward_pe = info.get('forwardPE')
                     pb_ratio = info.get('priceToBook')
                     eps = info.get('trailingEps')
                     
-                    # Yahoo passes margins as raw decimals (.10 instead of 10.0%), so we do math to standardize it!
                     net_margin = (info.get('profitMargins') * 100) if info.get('profitMargins') else None
                     eps_growth = (info.get('earningsGrowth') * 100) if info.get('earningsGrowth') else None
                     rev_growth = (info.get('revenueGrowth') * 100) if info.get('revenueGrowth') else None
@@ -97,22 +97,20 @@ if st.button("Search Stock"):
                     roe = (info.get('returnOnEquity') * 100) if info.get('returnOnEquity') else None
                     
             except Exception as e:
-                st.error(f"Global Fallback rate-limited or crashed: {e}")
-                price = None # This will prevent the tables from drawing incorrectly
+                st.error(f"Global Fallback blocked. Even the disguise failed! Reason: {e}")
+                price = None 
 
 
         # --- THE MAGIC DISPLAY WIDGETS --- 
-        # This draws identical columns no matter which engine "won" the data race above
-        
         if 'price' in locals() and price is not None:
-            engine_used = "Yahoo Finance Global Fallback" if use_fallback else "Finnhub Main Pipeline"
+            engine_used = "Yahoo Finance Global Fallback (Chrome Bypass)" if use_fallback else "Finnhub Official Data"
             
             st.subheader(f"{ticker_symbol}")
             st.metric(label="Current Price", 
                       value=format_data(price, prefix=currency_symbol), 
                       delta=format_data(change_num, prefix=currency_symbol))
             
-            st.caption(f"Data reliably sourced via {engine_used}")
+            st.caption(f"✅ Data routed via: **{engine_used}**")
             st.divider() 
             
             st.subheader("📊 Fundamental Master List")
