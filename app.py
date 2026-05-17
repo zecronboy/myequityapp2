@@ -5,6 +5,7 @@ import yfinance as yf
 import time
 from datetime import datetime
 import google.generativeai as genai
+import plotly.graph_objects as go
 from pytrends.request import TrendReq
 
 st.set_page_config(page_title="Family Office Hub", layout="wide")
@@ -42,7 +43,7 @@ st.write("Track parameters, query AI logic algorithms, and index mass mindshare 
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Artificial Intelligence", "Optical Communications", "Fintech Innovation", "Commodities / Def."], "Ticker": ["NVDA", "AAOI", "SQ", "XOM"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Optical Communications", "Alternative Energy", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF", "ENPH", "SEDG"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -52,7 +53,7 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading financial footprints & establishing stable LLM cadence... (May take 30+ secs depending on book size)"):
+    with st.spinner("Downloading financial footprints & establishing stable LLM cadence..."):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -78,12 +79,10 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
             wsb_json = requests.get("https://tradestie.com/api/v1/apps/reddit", timeout=5).json()
             for tick in wsb_json: wsb_lookup[tick['ticker']] = tick
         except: pass
-        
-        pytrends = TrendReq(hl='en-US', tz=360, timeout=5)
 
         for idx, row in enumerate(valid_rows):
             cat, t = row["Category"], row["Ticker"]
-            ai_was_pinged = False # Tracking marker
+            ai_was_pinged = False 
             
             try:
                 prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}").json() if API_KEY else {}
@@ -131,38 +130,24 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 if t in wsb_lookup:
                     c, sent = wsb_lookup[t]['no_of_comments'], wsb_lookup[t]['sentiment']
                     h_clr = "up-move" if sent == "Bullish" else "dn-move"
-                    hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> <strong>{c} Mentions</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
-                else: hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> Quiet / Null<br>"
-                
-                try:
-                    pytrends.build_payload([t], cat=0, timeframe='now 7-d', geo='')
-                    g_data = pytrends.interest_over_time()
-                    hype_html += f"<span class='meta-lbl'>G-Trends 7D: </span> <strong>{g_data[t].iloc[-1]} / 100</strong>"
-                except: 
-                    # If this gets completely banned by google shared IP we gracefully hide the error text
-                    pass 
+                    hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> <strong>{c} Posts/Day</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
+                else: hype_html += f"<span class='meta-lbl'>WSB/Reddit: </span> Zero Tractions<br>"
 
-                # ====== OPTIMIZED GEMINI AI MODULE ======
                 ai_take = ""
                 if GEMINI_KEY and ai_model is not None:
                     try:
                         raw_headlines = [h.get('title') for h in stock.news][:6] if hasattr(stock, 'news') and stock.news else []
-                        
-                        # SMART AI PREVENTER: Don't spend google quota requests on assets with ZERO news today!
                         if len(raw_headlines) > 0:
                             prompt = f"Analyze these live financial headlines for {t}: {raw_headlines}. In exactly one brief sentence, describe the narrative currently taking place. Then attach one space, and output exactly one tag wrapped in brackets based on the sentiment: [BULLISH], [BEARISH], or [NEUTRAL]."
                             response = ai_model.generate_content(prompt)
                             ai_was_pinged = True
-                            
                             try: ai_take = response.text.replace('\n', ' ').strip()
                             except ValueError: ai_take = "Halted by Google Cloud Safety guardrails."
-                        else: ai_take = f"Quiet cycle: 0 actionable corporate press releases filed for {t}."
-                        
+                        else: ai_take = f"Quiet cycle: No public actionable corporate press releases filed recently."
                     except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by 15 req/min AI Ceiling (Slow down queries)."
-                        else: ai_take = "Data routing exception encountered."
-                else:
-                    ai_take = "Module requires Valid Gemini Studio configuration string."
+                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by API Ceilings."
+                        else: ai_take = "Data routing exception."
+                else: ai_take = "System awaiting verified Intelligence Framework key."
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
@@ -173,13 +158,8 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Fail", "MCAP_PRC": "Error", "FINS": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            
-            # --- PERFECTING THE SPEED BUMPS ---
-            # To adhere STRICTLY to Gemini's hard 4.0 second per cycle rule without penalizing offline stocks
-            if ai_was_pinged:
-                time.sleep(4.2)
-            else:
-                time.sleep(0.5)
+            if ai_was_pinged: time.sleep(4.2)
+            else: time.sleep(0.5)
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
@@ -187,16 +167,20 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
 
 if 'master_df' in st.session_state:
     mdf = st.session_state.master_df
+    
     unique_cats = []
+    unique_tickers_list = [] # Tracker used for the Global Trends mapping graph!
     for row in valid_rows:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
+        if row["Ticker"] not in unique_tickers_list: unique_tickers_list.append(row["Ticker"])
             
+    # PRINT THE GRID! 
     for category in unique_cats:
         st.markdown(f"<div class='cat-heading'>{category}</div>", unsafe_allow_html=True)
         cat_df = mdf[mdf['Category'] == category]
         
         table_html = "<table class='custom-table'>"
-        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 12%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 10%'>Earning Catalyst</th><th style='width: 18%'>Mindshare Trackers</th><th>🧠 Generative AI Analysis Pipeline</th></tr>"
+        table_html += "<tr><th style='width: 8%'>Asset</th><th style='width: 12%'>Cap & Daily Price</th><th style='width: 17%'>Valuations & Core Metrics</th><th style='width: 10%'>Earning Catalyst</th><th style='width: 13%'>Reddit Heat</th><th>🧠 Generative AI Analysis Pipeline</th></tr>"
         
         for _, r in cat_df.iterrows():
             table_html += f"<tr>"
@@ -210,3 +194,57 @@ if 'master_df' in st.session_state:
             
         table_html += "</table><br>" 
         st.markdown(table_html, unsafe_allow_html=True)
+    
+    
+    # ====== MODULE 4: MEGA GOOGLE TRENDS Mindshare Comparative Graphic ======
+    st.write("---")
+    st.markdown("<div class='cat-heading'>🌍 Search Intensity Metrics (Comparative Max Volume: 100)</div>", unsafe_allow_html=True)
+    
+    try:
+        # Pytrends mandates no more than 5 unique targets queried at exactly the same time!
+        trends_target_group = unique_tickers_list[:5] 
+        st.caption(f"Graphing the 5-Year aggregate mindshare scaling relative to leading benchmark across up to five portfolio components: {trends_target_group}")
+        
+        pytrends = TrendReq(hl='en-US', tz=360, timeout=10) # 10s wait for heavier pull requests
+        
+        # 'today 5-y' pulls back explicitly from today exactly 5-years past for a holistic landscape graph
+        pytrends.build_payload(kw_list=trends_target_group, cat=0, timeframe='today 5-y')
+        
+        trend_df = pytrends.interest_over_time()
+        
+        if not trend_df.empty:
+            if 'isPartial' in trend_df.columns:
+                trend_df = trend_df.drop(columns=['isPartial']) # Formatting drop 
+                
+            fig = go.Figure()
+            colors = ['#1f77b4', '#d62728', '#ff7f0e', '#2ca02c', '#9467bd']
+            
+            # Map traces from dataframe visually!
+            for idx, col in enumerate(trend_df.columns):
+                fig.add_trace(go.Scatter(
+                    x=trend_df.index, y=trend_df[col], 
+                    mode='lines', name=col,
+                    line=dict(color=colors[idx % len(colors)], width=2.5)
+                ))
+            
+            fig.update_layout(
+                height=450,
+                margin=dict(l=20, r=40, t=20, b=20),
+                hovermode="x unified",
+                yaxis=dict(title='Relative Intensity Scale', showgrid=True, gridcolor='rgba(200,200,200, 0.2)', fixedrange=False),
+                xaxis=dict(showgrid=False, fixedrange=False),
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': True})
+            
+        else:
+            st.warning("Trend servers rendered null output. Search frequency too weak to scale across assets selected.")
+
+    except requests.exceptions.Timeout:
+         st.error("Ping failure: Global Google Search endpoints declined initial sync timing threshold (Shared Servers hit Quotas occasionally!). Run sequence again.")
+    except Exception as t_err:
+        if "429" in str(t_err) or "Quota" in str(t_err):
+            st.info("Pytrends has locked standard datacenter API interactions via Cloud deployments (Code 429). Feature mandates Local IP environment / execution rather than Hosted Streams.")
+        else:
+            pass # Keep it gracefully swallowed
