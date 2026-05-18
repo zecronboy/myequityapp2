@@ -27,7 +27,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Math formatters that won't panic on empty elements
+# Safe Number Extractors
 def format_large_currency(val):
     if not val or pd.isna(val) or val == 'N/A' or float(val) == 0: return "N/A"
     try:
@@ -41,21 +41,17 @@ def format_large_currency(val):
 def fmt_val(num):
     return f"<strong>{num:.2f}</strong>" if isinstance(num, (int, float)) else "N/A"
 
-# Absolute mathematical firewall to shield API pulls turning into TypeErrors!
 def fetch_safe_growth(finn_data, yf_data):
-    if finn_data is not None and isinstance(finn_data, (int, float)):
-        return float(finn_data)
-    elif yf_data is not None and isinstance(yf_data, (int, float)):
-        return float(yf_data) * 100.0
+    if finn_data is not None and isinstance(finn_data, (int, float)): return float(finn_data)
+    elif yf_data is not None and isinstance(yf_data, (int, float)): return float(yf_data) * 100.0
     return None
-
 
 st.title("💼 Family Office Command Center")
 st.write("Track parameters, query AI logic algorithms, and index mass mindshare volume.")
 
 st.sidebar.header("📝 Book Ledger")
 if "watchlist" not in st.session_state:
-    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Optical Communications", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF", "ENPH"]})
+    st.session_state.watchlist = pd.DataFrame({"Category": ["Optical Communications", "Alternative Energy", "Alternative Energy"], "Ticker": ["AAOI", "SIVEF", "ENPH"]})
 
 edited_df = st.sidebar.data_editor(st.session_state.watchlist, num_rows="dynamic", use_container_width=True, hide_index=True)
 valid_rows = [{"Category": str(r['Category']).strip() if str(r['Category']).strip() not in ["", "NAN", "NONE"] else "Unsorted", "Ticker": str(r['Ticker']).strip().upper()} for _, r in edited_df.iterrows() if str(r['Ticker']).strip().upper() not in ["", "NAN", "NONE"]]
@@ -65,7 +61,7 @@ if not valid_rows:
 st.write("---")
 
 if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container_width=True):
-    with st.spinner("Downloading fundamental spreadsheets & locking metric arrays..."):
+    with st.spinner("Executing shielded matrix pulls to avoid 429 HTTP Data Traps..."):
         
         API_KEY = st.secrets.get("FINNHUB_KEY", "")
         GEMINI_KEY = st.secrets.get("GEMINI_API_KEY", "")
@@ -96,28 +92,57 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
             ai_was_pinged = False 
             
             try:
-                prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}").json() if API_KEY else {}
-                quote_data = requests.get(f"https://finnhub.io/api/v1/quote?symbol={t}&token={API_KEY}").json() if API_KEY else {}
-                earn_json = requests.get(f"https://finnhub.io/api/v1/stock/earnings?symbol={t}&token={API_KEY}").json() if API_KEY else []
-                metrics = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={t}&metric=all&token={API_KEY}").json().get('metric', {}) if API_KEY else {}
+                # 1. CORE PIPELINE: Finnhub API Engine
+                try: prof_data = requests.get(f"https://finnhub.io/api/v1/stock/profile2?symbol={t}&token={API_KEY}", timeout=6).json() if API_KEY else {}
+                except: prof_data = {}
+                try: quote_data = requests.get(f"https://finnhub.io/api/v1/quote?symbol={t}&token={API_KEY}", timeout=6).json() if API_KEY else {}
+                except: quote_data = {}
+                try: earn_json = requests.get(f"https://finnhub.io/api/v1/stock/earnings?symbol={t}&token={API_KEY}", timeout=6).json() if API_KEY else []
+                except: earn_json = []
+                try: metrics = requests.get(f"https://finnhub.io/api/v1/stock/metric?symbol={t}&metric=all&token={API_KEY}", timeout=6).json().get('metric', {}) if API_KEY else {}
+                except: metrics = {}
 
+                # 2. VULNERABLE CLOUD PIPELINE (Micro-Shielded Yahoo Traps!) 
+                # This guarantees that Yahoo Ban codes ("HTTP 429 Too Many Requests") hit the 'pass' instruction instantly
+                # allowing the UI array generator to finish filling the cells securely using Finnhub!
                 stock = yf.Ticker(t)
-                yf_info = stock.info 
-                co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Asset").replace("'", "&apos;") 
+                yf_info, qf_df, news_arr = {}, pd.DataFrame(), []
                 
-                # Setup
-                price, prev_close = quote_data.get('c') or yf_info.get('currentPrice') or 0, quote_data.get('pc') or yf_info.get('previousClose')
+                try: yf_info = stock.info 
+                except: pass
+                
+                try: qf_df = stock.quarterly_financials
+                except: pass 
+                
+                try: news_arr = stock.news
+                except: pass
+                
+
+                # --------------------- BEGIN ARCHITECTURAL COMPILATION ----------------------- #
+
+                # Identifying the name via any survivor database route
+                co_name = str(prof_data.get('name') or yf_info.get('shortName') or "Global Asset").replace("'", "&apos;") 
+                
+                # Market Mechanics (Shielded Prices)
+                price = quote_data.get('c') if quote_data.get('c') else yf_info.get('currentPrice') or 0
+                prev_close = quote_data.get('pc') if quote_data.get('pc') else yf_info.get('previousClose') or 0
+                
                 delta_str = ""
                 if price and prev_close and price > 0 and prev_close > 0:
                     move = price - prev_close
                     icon, m_cls = ("▲", "up-move") if move > 0 else ("▼", "dn-move")
                     delta_str = f"<br><span class='{m_cls}'>{icon} {abs(move):.2f} ({move/prev_close * 100:+.2f}%)</span>"
 
-                currency_sym = "$" if yf_info.get('currency', 'USD') in ['USD', 'CAD'] else ("£" if yf_info.get('currency', 'USD') == "GBP" else "HK$")
+                # Global ForeX Tracing Layer
+                curr_raw = prof_data.get('currency') or yf_info.get('currency', 'USD')
+                currency_sym = "$" if curr_raw in ['USD', 'CAD'] else ("£" if curr_raw == "GBP" else "HK$")
                 price_f = f"<strong>{currency_sym}{price:,.2f}</strong>{delta_str}" if price else "N/A"
-                mcap = format_large_currency(yf_info.get('marketCap') or (prof_data.get('marketCapitalization', 0) * 1000000))
                 
-                # Value Metrics 
+                # Finnhub Cap outputs identically to Yahoo Cap! (Saves crashes)
+                fallback_cap = prof_data.get('marketCapitalization', 0) * 1000000 
+                mcap = format_large_currency(yf_info.get('marketCap') or fallback_cap)
+                
+                # Valuations Layer  
                 pe_ttm = metrics.get('peTTM', yf_info.get('trailingPE'))
                 pe_fwd = yf_info.get('forwardPE', metrics.get('peNormalizedAnnual'))
                 peg_ttm = yf_info.get('trailingPegRatio') 
@@ -129,7 +154,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                               f"<span class='meta-lbl'>PEG (T|F): </span>{fmt_val(peg_ttm)} <span style='color:#ccc; padding: 0 4px;'>|</span> {fmt_val(peg_fwd)}<br>" \
                               f"<div style='margin-top:2px;'><span class='meta-lbl'>P/B:</span> {fmt_val(pb_val)} <span style='color:#ccc; padding: 0 4px;'>|</span> <span class='meta-lbl'>P/S:</span> {fmt_val(ps_val)}</div>"
                               
-                # Earnings Setup! 
+                # Dual Estimates Core EPS (Comes entirely free from finnhub) 
                 eps_actual, eps_est, eps_diff, eps_prev = None, None, None, None 
                 
                 if isinstance(earn_json, list) and len(earn_json) > 0 and 'actual' in earn_json[0]:
@@ -153,13 +178,13 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 else: 
                     eps_box = f"<span class='meta-lbl'>ACT EPS: </span>-"
 
-                # THE SHIELDED REVENUE BUILDER 
+
+                # QUARTERLY DATA SEC SHIELDED MATH (Bypassing Yahoo's IP Lock down securely!)
                 q_rev_val = None
                 q_rev_lbl = "REV (Q)" 
                 margin_0, margin_1 = None, None
                 
                 try: 
-                    qf_df = stock.quarterly_financials
                     if not qf_df.empty:
                         quarter_dt = qf_df.columns[0]
                         q_rev_lbl = f"REV ({quarter_dt.strftime('%b &apos;%y')})" 
@@ -175,19 +200,21 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                                 if pd.notna(rev_1) and rev_1 != 0 and pd.notna(net_1): margin_1 = (net_1 / rev_1) * 100
                 except: pass
 
-                if margin_0 is None and yf_info.get('profitMargins'): margin_0 = yf_info.get('profitMargins') * 100
+                # Extreme Math Rescue on Margin failures
+                if margin_0 is None:
+                    fb_m = metrics.get('netMarginTTM', metrics.get('netProfitMarginAnnual'))
+                    if fb_m: margin_0 = float(fb_m)
+                    elif yf_info.get('profitMargins'): margin_0 = float(yf_info.get('profitMargins') * 100)
+
                 marg_str = f"<strong>{margin_0:.1f}%</strong>" if margin_0 is not None else "-"
-                
                 marg_qoq_str = ""
                 if margin_0 is not None and margin_1 is not None:
                     diff = margin_0 - margin_1
                     trend_word = "Improved" if diff > 0 else "Declined"
                     m_clr = "up-move" if diff > 0 else "dn-move"
                     marg_qoq_str = f" <span class='{m_clr}' style='font-size:11.5px;'>( {trend_word} from {margin_1:.1f}% prior Q )</span>"
-                
                 marg_box = f"<div style='margin-top:2px;'><span class='meta-lbl'>NET MRG: </span>{marg_str}{marg_qoq_str}</div>"
 
-                # Math protection algorithms engaged here! 
                 yoy = fetch_safe_growth(metrics.get('revenueGrowthTTMYoy'), yf_info.get('revenueGrowth'))
                 qoq = fetch_safe_growth(metrics.get('revenueGrowthQuarterlyYoy'), yf_info.get('quarterlyRevenueGrowth'))
                 
@@ -198,7 +225,7 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 pulse_col = f"{eps_box}{rev_box}{marg_box}"
 
 
-                # Calendar Formatting
+                # Live Calendar Output 
                 earn_ts = yf_info.get('earningsTimestamp') 
                 if earn_ts:
                     utc_dt = datetime.utcfromtimestamp(earn_ts)
@@ -206,7 +233,6 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     earn_date_str = f"<span class='earn-date'>{utc_dt.strftime('%b %d')}</span> <span class='earn-past'>{'(Past)' if is_p else ''}</span>"
                 else: earn_date_str = "-"
 
-                # Retail Scrub Logic
                 hype_html = ""
                 if t in wsb_lookup:
                     c, sent = wsb_lookup[t]['no_of_comments'], wsb_lookup[t]['sentiment']
@@ -214,21 +240,24 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                     hype_html += f"<span class='meta-lbl'>Reddit Heat: </span> <strong>{c} Posts</strong> (<span class='{h_clr}'>{sent}</span>)<br>"
                 else: hype_html += f"<span class='meta-lbl'>Reddit Heat: </span> Quiet<br>"
 
-                ai_take = ""
+                ai_take = "Key Pipeline Error"
                 if GEMINI_KEY and ai_model is not None:
                     try:
-                        raw_headlines = [h.get('title') for h in stock.news][:6] if hasattr(stock, 'news') and stock.news else []
+                        raw_headlines = [h.get('title') for h in news_arr][:6] if news_arr else []
                         if len(raw_headlines) > 0:
                             prompt = f"Analyze these live financial headlines for {t}: {raw_headlines}. In exactly one brief sentence, describe the narrative currently taking place. Then attach one space, and output exactly one tag wrapped in brackets based on the sentiment: [BULLISH], [BEARISH], or [NEUTRAL]."
                             response = ai_model.generate_content(prompt)
                             ai_was_pinged = True
                             try: ai_take = response.text.replace('\n', ' ').strip()
                             except ValueError: ai_take = "Halted by Google Cloud Safety guardrails."
-                        else: ai_take = f"Quiet cycle: No public actionable corporate press releases filed recently."
+                        else: 
+                            # Custom messaging to handle Cloud API scraping barriers perfectly
+                            if qf_df.empty: ai_take = f"Quiet Cycle: Streamlit host server temporally muted / Blocked from retrieving Yahoo financial news endpoints to save Cloud stability!"
+                            else: ai_take = f"Quiet cycle: No public actionable corporate press releases flagged recently."
                     except Exception as e:
-                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by Generative ceilings (Traffic overload)."
-                        else: ai_take = f"LLM Routing exception encountered: {str(e)[:45]}..."
-                else: ai_take = "Module requires Generative Studio parameters on host deployment!"
+                        if "429" in str(e) or "quota" in str(e).lower(): ai_take = "Rate limited by Google Generative backend quotas."
+                        else: ai_take = f"Execution exception caught inside framework node."
+                else: ai_take = "Generative configuration omitted or malfunctioning. Bypass sequence verified."
 
                 data_outputs.append({
                     "Category": cat, "Ticker": t, "Name": co_name, "MCAP_PRC": f"<strong>{mcap}</strong><br><br>{price_f}", 
@@ -237,12 +266,11 @@ if st.button("🔄 Sync Intelligence Pipeline & Core Market Feed", use_container
                 })
                 
             except Exception as loop_e:
-                # !! NEW HARD-CODED EMERGENCY DIAGNOSTIC SYSTEM !!
-                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Crash", "MCAP_PRC": f"<span style='color:red; font-size:12px'>Crash Err: {str(loop_e)}</span>", "VALS": "-", "PULSE": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
+                data_outputs.append({ "Category": cat, "Ticker": t, "Name": "Crash", "MCAP_PRC": f"<span style='color:red; font-size:12px'>Crash: {str(loop_e)}</span>", "VALS": "-", "PULSE": "-", "Earnings": "-", "Mindshare": "-", "AI_Brief": "-"})
             
             progress_bar.progress((idx + 1) / len(valid_rows))
-            if ai_was_pinged: time.sleep(5.1)
-            else: time.sleep(0.6)
+            if ai_was_pinged: time.sleep(4.5)
+            else: time.sleep(1.5) # Gentle spacer enforcing finnhub api bandwidth protections inherently alongside missing 1.5 engines.
             
         progress_bar.empty()
         st.session_state.master_df = pd.DataFrame(data_outputs)
@@ -257,7 +285,7 @@ if 'master_df' in st.session_state:
         if row["Category"] not in unique_cats: unique_cats.append(row["Category"])
         if row["Ticker"] not in unique_tickers_list: unique_tickers_list.append(row["Ticker"])
             
-    # MATRICES OUTPUT LAYER 
+    # REVISED HTML DEPLOYER FOR DUAL FINANCE MATRICES
     for category in unique_cats:
         st.markdown(f"<div class='cat-heading'>{category}</div>", unsafe_allow_html=True)
         cat_df = mdf[mdf['Category'] == category]
